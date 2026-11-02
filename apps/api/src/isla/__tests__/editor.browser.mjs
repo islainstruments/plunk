@@ -40,12 +40,19 @@ async function main() {
     await pool.query('CREATE TABLE public.staff_users(id text PRIMARY KEY,role text,active boolean)');
     await pool.query("INSERT INTO public.staff_users VALUES('editor-admin','admin',true),('editor-viewer','viewer',true),('editor-support','support_agent',true),('editor-developer','developer',true),('editor-inactive','admin',false)");
     execFileSync('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-keyout', join(directory, 'fixture.key'), '-out', join(directory, 'fixture.crt'), '-days', '1', '-subj', '/CN=localhost'], {stdio: 'ignore'});
-    const {createNewsletterDraftApp} = await import(pathToFileURL(join(directoryOfTest, '../../../dist/isla/NewsletterDraftApp.js')).href);
+    // Optional absolute artifact directory exercises its standalone dependency tree.
+    const artifact = process.argv[2];
+    if (artifact) assert(artifact.startsWith('/'), 'Absolute artifact directory required');
+    const {createRuntimeApp} = await import(pathToFileURL(join(artifact ?? join(directoryOfTest, '../../../dist/isla'), 'NewsletterRuntime.js')).href);
+    const metadata = artifact ? JSON.parse(await readFile(join(artifact, 'release.json'), 'utf8')) :
+      {revision: 'b'.repeat(40), source: 'https://github.com/islainstruments/plunk/tree/' + 'b'.repeat(40)};
     let app;
     server = https.createServer({key: await readFile(join(directory, 'fixture.key')), cert: await readFile(join(directory, 'fixture.crt'))}, (req, res) => app(req, res));
     await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
     const origin = `https://127.0.0.1:${server.address().port}`;
-    app = createNewsletterDraftApp({enabled: true, websiteOrigin: origin, staffSecret: secret, staffDb: pool, newsletterDb: pool});
+    const runtime = {auth: 'website', websiteOrigin: origin, port: server.address().port, host: '127.0.0.1',
+      databaseFile: '/synthetic/not-read.json', staffDatabaseFile: '/synthetic/not-read-staff.json', staffSecretFile: '/synthetic/not-read-secret'};
+    app = createRuntimeApp(runtime, pool, metadata, {pool, secret});
     browser = await chromium.launch({headless: true, ...(process.env.CHROMIUM_EXECUTABLE ? {executablePath: process.env.CHROMIUM_EXECUTABLE} : {})});
     console.log('Compiled service on loopback HTTPS; Chromium ' + browser.version());
     const errors = [], external = [];
@@ -72,7 +79,7 @@ async function main() {
     }
     for (const [user, expired] of [[null, false], ['editor-inactive', false], ['editor-admin', true]]) {
       const ctx = await context(user, expired);
-      for (const path of [route, route + '/editor.js', route + '/editor.css', base]) assert.equal((await ctx.request.get(origin + path)).status(), 401);
+      for (const path of [route, route + '/editor.js', route + '/editor.css', route + '/source', base]) assert.equal((await ctx.request.get(origin + path)).status(), 401);
       await ctx.close();
     }
     check('anonymous, inactive and expired sessions denied page/assets/API');
@@ -164,7 +171,8 @@ async function main() {
     const fresh = await admin.newPage(); await fresh.goto(origin + route); await status(fresh, 'Select a draft');
     await fresh.getByRole('button', {name: 'First editor wins · r3', exact: true}).click(); await status(fresh, 'Loaded revision 3');
     assert.equal(await fresh.getByLabel('Independent plain text').inputValue(), 'Reconciled explicit plain text.');
-    assert.equal(await fresh.getByRole('link', {name: 'Complete corresponding source and build instructions'}).getAttribute('href'), 'https://github.com/islainstruments/plunk/tree/isla/resend-staff');
+    assert.equal(await fresh.getByRole('link', {name: 'Complete corresponding source and build instructions'}).getAttribute('href'), metadata.source);
+    assert.equal((await (await admin.request.get(origin + route + '/source')).json()).source, metadata.source);
     await fresh.setViewportSize({width: 390, height: 844});
     assert.equal(await fresh.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
     await fresh.screenshot({path: join(directory, 'synthetic-editor.png'), fullPage: true});
@@ -206,7 +214,8 @@ async function main() {
     assert.equal(await fresh.getByLabel('Subject', {exact: true}).inputValue(), 'Validation and recovery');
     assert.deepEqual(errors, []); assert.equal(external.length, 0);
     check('browser paginates 24 drafts without duplicates or editor reset; hostile subject renders only as text');
-    app = createNewsletterDraftApp({websiteOrigin: origin, staffSecret: secret, staffDb: pool, newsletterDb: pool});
+    app = createRuntimeApp({auth: 'locked', websiteOrigin: origin, port: server.address().port,
+      host: '127.0.0.1', databaseFile: '/synthetic/not-read.json'}, pool, metadata);
     for (const path of [route, route + '/editor.js', base]) assert.equal((await admin.request.get(origin + path)).status(), 404);
     assert.equal((await (await admin.request.get(origin + '/health/live')).json()).sending, false);
     check('constructor default-off removes editor/assets/API while keeping liveness non-sending');

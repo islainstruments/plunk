@@ -8,9 +8,7 @@ import {z} from 'zod';
 
 import {createNewsletterDraftApp} from './NewsletterDraftApp.js';
 
-export const runtimeConfig = z.object({
-  // This release cannot activate staff auth. A separate scoped binding is required.
-  auth: z.literal('locked'),
+const commonConfig = z.object({
   websiteOrigin: z.string().url().refine(value => {
     const url = new URL(value);
     return url.protocol === 'https:' && url.pathname === '/' && !url.username && !url.password && !url.search && !url.hash;
@@ -19,6 +17,21 @@ export const runtimeConfig = z.object({
   port: z.number().int().min(1024).max(65535),
   databaseFile: z.string().startsWith('/'),
 }).strict();
+export const runtimeConfig = z.discriminatedUnion('auth', [
+  commonConfig.extend({auth: z.literal('locked')}),
+  commonConfig.extend({auth: z.literal('website'), staffDatabaseFile: z.string().startsWith('/'),
+    staffSecretFile: z.string().startsWith('/')}),
+]);
+export const staffDatabaseConfig = z.object({
+  host: z.string().regex(/^(?:[a-z0-9-]+\.)+supabase\.com$|^staff-db-proxy$/),
+  port: z.union([z.literal(5432), z.literal(4196)]),
+  database: z.literal('postgres'),
+  user: z.string().regex(/^isla_newsletter_staff_read(?:\.[a-z0-9]+)?$/),
+  password: z.string().min(32),
+  tlsServerName: z.string().regex(/^(?:[a-z0-9-]+\.)+supabase\.com$/),
+  caFile: z.string().startsWith('/'),
+}).strict().refine(value => value.host === 'staff-db-proxy' ? value.port === 4196 :
+  value.port === 5432 && value.host === value.tlsServerName, 'Verified direct/session endpoint or isolated TLS proxy required');
 export const databaseConfig = z.object({
   // Local Unix socket, loopback or isolated Docker alias only. No remote TLS downgrade.
   host: z.string().refine(value => value === 'newsletter-db' || value === '127.0.0.1' || value.startsWith('/')),
@@ -39,7 +52,9 @@ export async function readPrivateJson(path: string): Promise<unknown> {
   return JSON.parse(await readFile(path, 'utf8')) as unknown;
 }
 
-export function createRuntimeApp(config: RuntimeConfig, pool: pg.Pool, metadata: z.infer<typeof releaseConfig>) {
+export function createRuntimeApp(config: RuntimeConfig, pool: pg.Pool, metadata: z.infer<typeof releaseConfig>,
+  binding?: {pool: pg.Pool; secret: string}) {
+  if (config.auth === 'website' && (!binding || binding.secret.length < 32)) throw new Error('Scoped website binding required');
   const app = express();
   app.disable('x-powered-by');
   app.use((_req, res, next) => {
@@ -56,7 +71,27 @@ export function createRuntimeApp(config: RuntimeConfig, pool: pg.Pool, metadata:
       if (!result.rows[0] || result.rows[0].unsafe || result.rows[0].ledger_write) throw new Error('Unsafe database role');
       await pool.query('SELECT id,revision,content FROM isla_newsletter.drafts LIMIT 0');
       await pool.query('SELECT draft_id,revision FROM isla_newsletter.draft_revisions LIMIT 0');
-      res.json({ready: true, stage: 'locked-staging', staffAccess: false, sending: false,
+      if (config.auth === 'website') {
+        const staff = await binding!.pool.query(`SELECT current_user = 'isla_newsletter_staff_read'
+          AND NOT (rolsuper OR rolbypassrls OR rolcreaterole OR rolcreatedb OR rolreplication)
+          AND NOT EXISTS (SELECT 1 FROM pg_auth_members WHERE member=r.oid)
+          AND NOT has_schema_privilege(current_user,'public','CREATE')
+          AND NOT has_table_privilege(current_user,'public.staff_users','INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER')
+          AND NOT EXISTS (SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+            WHERE n.nspname NOT LIKE 'pg_%' AND n.nspname <> 'information_schema'
+            AND (c.relowner=r.oid OR (c.relkind IN ('r','v','m','f','p') AND c.oid <> 'public.staff_users'::regclass
+              AND has_any_column_privilege(current_user,c.oid,'SELECT,INSERT,UPDATE,REFERENCES')
+              AND NOT (c.relkind='v' AND EXISTS (SELECT 1 FROM pg_depend d JOIN pg_extension e ON e.oid=d.refobjid
+                WHERE d.classid='pg_class'::regclass AND d.objid=c.oid AND d.deptype='e'
+                  AND e.extname='pg_stat_statements')))))
+          AND NOT EXISTS (SELECT 1 FROM information_schema.column_privileges
+            WHERE grantee=current_user AND table_schema='public' AND table_name='staff_users'
+              AND (privilege_type <> 'SELECT' OR column_name NOT IN ('id','role','active'))) AS safe
+          FROM pg_roles r WHERE rolname=current_user`);
+        if (!staff.rows[0]?.safe) throw new Error('Unsafe staff role');
+        await binding!.pool.query('SELECT id,role,active FROM public.staff_users LIMIT 0');
+      }
+      res.json({ready: true, stage: config.auth === 'website' ? 'staff-draft-only' : 'locked-staging', staffAccess: config.auth === 'website', sending: false,
         customerDispatch: false, revision: metadata.revision});
     } catch {
       res.status(503).json({ready: false, sending: false, error: 'Staging database unavailable or unsafe'});
@@ -64,9 +99,9 @@ export function createRuntimeApp(config: RuntimeConfig, pool: pg.Pool, metadata:
   });
   app.get('/source', (_req, res) => res.json({...metadata, license: 'AGPL-3.0',
     notice: 'ISLA modifications to Plunk. Complete corresponding source includes build scripts.'}));
-  // No fixture auth, session minting, environment-based opt-in or provider credentials.
-  app.use(createNewsletterDraftApp({enabled: false, websiteOrigin: config.websiteOrigin,
-    staffSecret: '', staffDb: pool, newsletterDb: pool}));
+  // No fixture auth, session minting or provider credentials.
+  app.use(createNewsletterDraftApp({enabled: config.auth === 'website', websiteOrigin: config.websiteOrigin,
+    staffSecret: binding?.secret ?? '', staffDb: binding?.pool ?? pool, newsletterDb: pool, source: metadata.source}));
   return app;
 }
 
@@ -79,19 +114,35 @@ export async function startRuntime(configPath: string, releasePath: string) {
   const pool = new pg.Pool({...db, max: 3, connectionTimeoutMillis: 3000, idleTimeoutMillis: 10000,
     statement_timeout: 5000, query_timeout: 6000, application_name: 'isla-newsletter-staging'});
   pool.on('error', () => { /* Health check fails closed; never log connection details. */ });
-  const app = createRuntimeApp(config, pool, metadata);
+  let binding: {pool: pg.Pool; secret: string} | undefined;
+  if (config.auth === 'website') {
+    const staff = staffDatabaseConfig.parse(await readPrivateJson(config.staffDatabaseFile));
+    const secretInfo = await stat(config.staffSecretFile);
+    if (!secretInfo.isFile() || (secretInfo.mode & 0o077) !== 0) throw new Error('Private staff secret required');
+    const secret = await readFile(config.staffSecretFile, 'utf8');
+    if (secret.length < 32) throw new Error('Strong staff secret required');
+    const {caFile, tlsServerName, ...connection} = staff;
+    const staffPool = new pg.Pool({...connection, ssl: {rejectUnauthorized: true,
+      ca: await readFile(caFile, 'utf8'), servername: tlsServerName, minVersion: 'TLSv1.2'},
+      max: 2, connectionTimeoutMillis: 3000, statement_timeout: 3000, query_timeout: 4000,
+      idleTimeoutMillis: 10000, application_name: 'isla-newsletter-staff-read'});
+    staffPool.on('error', () => { /* Never log private connection details. */ });
+    binding = {pool: staffPool, secret};
+  }
+  const app = createRuntimeApp(config, pool, metadata, binding);
   let server: Server;
   try {
     server = await new Promise<Server>((resolve, reject) => {
       const listening = app.listen(config.port, config.host, () => resolve(listening));
       listening.once('error', reject);
     });
-  } catch (error) { await pool.end(); throw error; }
+  } catch (error) { await binding?.pool.end(); await pool.end(); throw error; }
   server.requestTimeout = 15000;
   server.headersTimeout = 10000;
   server.keepAliveTimeout = 5000;
   return {server, close: async () => {
     await new Promise<void>((resolve, reject) => { server.close(error => error ? reject(error) : resolve()); server.closeIdleConnections(); });
     await pool.end();
+    await binding?.pool.end();
   }};
 }

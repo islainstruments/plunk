@@ -16,6 +16,7 @@ export interface DraftAppOptions {
   staffSecret: string;
   staffDb: Pool;
   newsletterDb: Pool;
+  source?: string;
 }
 const id = z.string().uuid();
 const base = '/staff/newsletters/api/drafts';
@@ -25,6 +26,8 @@ const previewRevision = z.string().regex(/^[1-9][0-9]{0,9}$/).transform(Number).
 /** A separate Express app, NOT middleware that makes upstream Plunk safe to expose. */
 export function createNewsletterDraftApp(options: DraftAppOptions) {
   const url = new URL(options.websiteOrigin);
+  if (options.source && !/^https:\/\/github\.com\/islainstruments\/plunk\/tree\/[a-f0-9]{40}$/.test(options.source))
+    throw new Error('Exact corresponding source required');
   if (url.protocol !== 'https:' || url.username || url.password || url.pathname !== '/' || url.search || url.hash)
     throw new Error('Website HTTPS origin required');
   const app = express();
@@ -35,7 +38,7 @@ export function createNewsletterDraftApp(options: DraftAppOptions) {
       'Referrer-Policy': 'no-referrer',
       'X-Content-Type-Options': 'nosniff',
       'X-Robots-Tag': 'noindex, nofollow',
-      'Link': '<https://github.com/islainstruments/plunk/tree/isla/resend-staff>; rel="source"',
+      'Link': `<${options.source ?? 'https://github.com/islainstruments/plunk/tree/isla/resend-staff'}>; rel="source"`,
       // Preview is inert even on direct navigation; no remote image/tracking requests.
       'Content-Security-Policy': "sandbox; default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'",
     });
@@ -56,7 +59,12 @@ export function createNewsletterDraftApp(options: DraftAppOptions) {
       next();
     });
     app.get(['/staff/newsletters', '/staff/newsletters/'], (_req, res) => {
-      res.set('Content-Security-Policy', editorPolicy).type('html').send(newsletterEditorPage(res.locals.staff));
+      const page = newsletterEditorPage(res.locals.staff);
+      res.set('Content-Security-Policy', editorPolicy).type('html').send(options.source ?
+        page.replace('https://github.com/islainstruments/plunk/tree/isla/resend-staff', options.source) : page);
+    });
+    app.get('/staff/newsletters/source', (_req, res) => {
+      res.json({source: options.source ?? 'https://github.com/islainstruments/plunk/tree/isla/resend-staff', license: 'AGPL-3.0', sending: false});
     });
     app.get('/staff/newsletters/editor.js', (_req, res) => {
       res.type('application/javascript').send(newsletterEditorScript());

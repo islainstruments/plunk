@@ -5,10 +5,12 @@ It imports only the dedicated draft app/editor/storage/session boundary. No
 ledger, upstream app, queue, SMTP, SES/Resend client, worker, import, signup or
 webhook module is included in the artifact. All sending remains unavailable.
 
-## Deliberately locked release
+## Locked default and explicitly bound staff release
 
-This release accepts only `auth: "locked"`. The editor code is packaged but all
-staff pages/assets/APIs remain default-off (404), even with a signed cookie.
+With `auth: "locked"`, all staff pages/assets/APIs remain off (404), even with a signed cookie.
+The separately commissioned `auth: "website"` mode requires both absolute private
+`staffDatabaseFile` and `staffSecretFile` bindings, a dedicated read-only canonical
+staff role, and peer-verified TLS. There is no fixture or public login mode.
 No fixture credentials, staff table, minting endpoint or production secret is
 installed. Healthy means the dedicated staging database is reachable under a
 non-superuser/non-bypass-RLS role without ledger writes; it does NOT mean a
@@ -16,12 +18,13 @@ live accepted staff platform. `/health/live`, `/health/ready` and `/source` are
 loopback-only operational endpoints. Readiness explicitly reports
 `staffAccess: false`, `sending: false`, `customerDispatch: false`.
 
-Live activation needs a separately commissioned server-side website-session
-binding, least-privilege read access to the canonical active staff id/role table,
-real session compatibility/revocation tests without impersonation, and scoped
-HTTPS ingress. Do not inject the website's general-purpose privileged DB
-credential or a service-role key as a workaround. There is no switch in this
-release that silently enables production auth.
+Live activation needs a commissioned server-side website-session binding,
+least-privilege staff lookup, and scoped HTTPS ingress. Do not inject the website's
+general-purpose privileged DB credential or a service-role key as a workaround.
+Human sign-in acceptance is independent of synthetic browser commissioning.
+Staff mode reports `staffAccess: true`, `sending: false`, `customerDispatch: false`
+only when both DB readiness checks pass. Staff-DB failure denies authenticated
+page/assets/API requests and returns readiness 503; no connection details are logged.
 
 ## Build exact corresponding source
 
@@ -51,7 +54,7 @@ Config and DB file must be regular files with no group/other access (0600/0400),
 readable by runtime UID 1000. Use a read-only private mount, never bake secrets
 into image layers. Configuration keys, all explicit:
 
-- `auth`: only `locked`.
+- `auth`: `locked`, or `website` with both explicit private bindings above.
 - `websiteOrigin`: an exact HTTPS origin (no path/userinfo/query/fragment).
 - `host`: defaults to `127.0.0.1`; `0.0.0.0` permitted ONLY inside an isolated
   container whose host publication is explicitly bound to 127.0.0.1.
@@ -59,7 +62,48 @@ into image layers. Configuration keys, all explicit:
 - `databaseFile`: absolute path to another private JSON file with `host`, `port`,
   `database`, `user`, `password`. Host is restricted to local Unix socket,
   loopback, or the isolated `newsletter-db` Docker alias. Remote database URLs
-  and TLS overrides are unsupported. Do not use transaction-pool endpoints.
+  and TLS overrides are unsupported for the newsletter database. Do not use transaction-pool endpoints.
+
+The staff database JSON instead has `host`, `port`, `database` (postgres), `user`
+(only isla_newsletter_staff_read with optional provider session-pool suffix),
+`password`, `tlsServerName`, and `caFile`. Remote endpoints must be matching
+Supabase session/direct host and TLS hostname, port 5432; `staff-db-proxy:4196`
+is the sole isolated proxy alternative. Passwords must be at least 32 characters.
+TLS always uses rejectUnauthorized=true, explicit provider CA, hostname checks
+and minimum TLS 1.2. Never set sslmode=no-verify or disable peer verification.
+`staffSecretFile` holds the server-owned website AUTH_SECRET reference material;
+it is not JSON, remains mode 0400/0600, is never returned or used to mint cookies.
+Only id,role,active are granted (see staff-read.sql). Never modify existing
+policies, disable RLS, or reuse a colliding role. Check actual read/write denials.
+Readiness also rejects schema CREATE, staff writes, owned application objects,
+memberships and unrelated application-table column access. Standard catalog
+metadata and extension-owned pg_stat_statements views retain the provider's
+existing PUBLIC visibility; no additional grants are made to those objects.
+Do not read/export their query-text rows as a commissioning probe.
+If the website session secret rotates, replace only the private reference file
+server-side and recreate only the newsletter app; do not rotate the website key.
+
+An internal-network app can use a dedicated systemd-socket-proxyd socket bound
+only to its private bridge gateway on 4196, forwarding only to the inspected
+session-pool endpoint. Keep TLS end-to-end from the app with the original SNI.
+Use a distinct new unit name, DynamicUser, no-new-privileges, IP allowlist for
+the app and exact upstream addresses, filesystem/resource/log restrictions as
+in loopback.service.in. No default route or general egress network is needed.
+Store substituted endpoint/unit details privately, not in corresponding source.
+
+newsletter-ingress.conf.in covers only the agreed same-site newsletter path.
+Page/assets/API/source/preview independently recheck the signed website session
+and current active role; admin writes additionally require exact Origin.
+Operational /health and /source endpoints must NOT be forwarded publicly.
+Before adding ingress, preserve the original file/hash and protected identities;
+recheck the hash for concurrent edits, nginx -t, then graceful reload only.
+Rollback removes only this run's marked include/addition; never overwrite a
+concurrently changed nginx file. Keep prior app image/config and additive data.
+
+The browser harness now exercises the runtime composition itself. Pass an
+absolute artifact directory as its sole optional CLI argument to run the same
+synthetic suite against the six-module artifact and standalone npm dependency
+tree, verifying the exact release.json source link. It never reads production DB config.
 
 The optional future NewsletterLedger uses session advisory locks across commits;
 a dedicated direct connection or verified session pool is required. PgBouncer

@@ -16,7 +16,7 @@ async function main() {
   };
   process.once('SIGTERM', stop);
   process.once('SIGINT', stop);
-  console.log('Newsletter locked staging listening; sending=false');
+  console.log('Newsletter non-sending runtime listening; sending=false; customerDispatch=false');
 }
 void main().catch(() => {
   // Deliberately omit errors/config/connection strings from operational logs.
