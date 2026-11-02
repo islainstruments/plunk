@@ -3,7 +3,7 @@ import {createHash} from 'node:crypto';
 import {renderTemplate} from '@plunk/shared';
 import type {PrismaClient} from '@plunk/db';
 import type {NewsletterLedger} from './NewsletterLedger.js';
-import {CampaignService} from '../services/CampaignService.js';
+
 
 /** The native editor/campaign remain the source of content and audience. The
  * immutable ledger is the source of delivery/retry/suppression facts. This
@@ -86,6 +86,9 @@ export class NativeNewsletterDelivery {
       audienceCondition: campaign.audienceCondition, segmentId: campaign.segmentId, plainText,
     })).digest('hex');
     await this.ledger.freezeCampaign(ledgerId, version);
+    // CampaignService reads validated runtime constants on import. Defer it until
+    // after NativePlunkServer has loaded its private configuration.
+    const {CampaignService} = await import('../services/CampaignService.js');
     const page = await CampaignService.getRecipientsCursor(this.projectId, campaign, 100, cursor);
     for (const contact of page.contacts) {
       const data = {email: contact.email, data: contact.data ?? {},
