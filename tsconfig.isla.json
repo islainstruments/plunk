@@ -1,0 +1,6 @@
+{
+  "extends": "./apps/api/tsconfig.json",
+  "compilerOptions": {"rootDir": "apps/api/src/isla", "outDir": ".isla-build", "noEmit": true},
+  "include": ["apps/api/src/isla/**/*.ts"],
+  "exclude": ["apps/api/src/isla/__tests__/**"]
+}
