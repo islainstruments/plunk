@@ -16,6 +16,7 @@ export interface NativePlunkOptions {
   controllers: object[];
   project: () => Promise<Record<string, unknown> | null>;
   ready: () => Promise<void>;
+  customerImports?: boolean;
   delivery?: Pick<NativeNewsletterDelivery, 'analytics' | 'content' | 'saveContent'>;
   contactImport?: NativeContactImport;
 }
@@ -30,7 +31,7 @@ export function createNativePlunkApp(options: NativePlunkOptions) {
       this.app.get('/health/ready', async (_req, res) => {
         try {
           await options.ready();
-          res.json({ready: true, application: 'native-plunk', sending: false, imports: false});
+          res.json({ready: true, application: 'native-plunk', sending: false, imports: options.customerImports === true});
         } catch {
           res.status(503).json({ready: false, sending: false, imports: false});
         }

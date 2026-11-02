@@ -12,7 +12,7 @@ const root=path.resolve(__dirname,'../..'),out=path.resolve(process.argv[2]||'na
  await fs.writeFile(path.join(out,'api/SOURCE_REVISION'),revision+'\n');
  await fs.copyFile(path.join(root,'LICENSE'),path.join(out,'api/LICENSE'));
  async function check(dir){for(const entry of await fs.readdir(dir,{withFileTypes:true})){
-  if(entry.name==='.env'||entry.name.startsWith('.env.')||entry.name==='private-exports'||entry.name.startsWith('.next-preserved')||['native-database.json','staff-database.json','canonical-database.json','session-secret','pablo-native-secret','backup-recovery.key'].includes(entry.name))throw Error('Forbidden release material');
+  if(entry.name==='.env'||entry.name.startsWith('.env.')||entry.name==='private-exports'||entry.name.startsWith('.next-preserved')||['native-database.json','staff-database.json','canonical-database.json','session-secret','pablo-native-secret','backup-recovery.key','staff-test-database.json','staff-test-release.json','import-release.json','resend-send-key.json'].includes(entry.name))throw Error('Forbidden release material');
   if(entry.isDirectory())await check(path.join(dir,entry.name));
  }}
  await check(out);console.log('Native release source',revision,'output',out);

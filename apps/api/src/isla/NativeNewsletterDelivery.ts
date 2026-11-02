@@ -14,7 +14,7 @@ export class NativeNewsletterDelivery {
   constructor(private readonly db: PrismaClient, private readonly ledger: NewsletterLedger,
     private readonly projectId: string) {}
 
-  async prepareStaffTest(campaignId: string, recipient: string, plainText?: string): Promise<string> {
+  async staffTestRevision(campaignId: string, recipient: string, plainText?: string) {
     plainText ??= (await this.content(campaignId)).plainText;
     if (!plainText.trim()) throw new Error('Explicit reviewed plain text required');
     const campaign = await this.db.campaign.findFirst({where: {id: campaignId, projectId: this.projectId}});
@@ -34,6 +34,11 @@ export class NativeNewsletterDelivery {
     const draft = {from: campaign.fromName ? `${campaign.fromName} <${campaign.from}>` : campaign.from,
       reply_to: campaign.replyTo ?? campaign.from, subject, html, text};
     const version = createHash('sha256').update(JSON.stringify(draft)).digest('hex');
+    return {draft, version};
+  }
+  async prepareStaffTest(campaignId: string, recipient: string, plainText?: string, expectedVersion?: string): Promise<string> {
+    const {draft, version} = await this.staffTestRevision(campaignId, recipient, plainText);
+    if (expectedVersion !== undefined && version !== expectedVersion) throw new Error('Staff test content revision mismatch');
     // Separate test identity makes accidental customer-purpose promotion impossible.
     const ledgerId = 'staff-test-' + campaignId;
     try {await this.ledger.createCampaign(ledgerId, 'test');}

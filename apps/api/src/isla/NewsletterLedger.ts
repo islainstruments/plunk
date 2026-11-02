@@ -23,6 +23,8 @@ export interface Options {
   mode?: 'disabled' | 'staff-test';
   designatedRecipients?: string[];
   apiKey?: string;
+  /** Operator-only immutable one-test pin; never populated from HTTP input. */
+  authorizedDelivery?: {id: string; version: string; recipient: string; from: string; replyTo: string};
   /** Must consult canonical eligibility, not just cached Plunk contact state. */
   eligibility: (email: string) => Promise<boolean>;
   publicOrigin: string;
@@ -235,6 +237,9 @@ export class NewsletterLedger {
       ).rows[0];
       if (!row || row.status !== 'queued') return row?.status ?? 'missing';
       if (row.purpose !== 'test') return 'customer-dispatch-disabled';
+      const pin = this.options.authorizedDelivery;
+      if (pin && (row.id !== pin.id || row.content_version !== pin.version || row.recipient !== pin.recipient ||
+        row.payload.from !== pin.from || row.payload.reply_to !== pin.replyTo)) return 'staff-test-not-authorized';
       if (row.state !== 'running') return 'paused';
       if (!this.allowlist.has(row.recipient as string)) return 'recipient-not-designated';
       if (row.next_attempt_at && new Date(row.next_attempt_at).getTime() > this.now().getTime()) return 'deferred';

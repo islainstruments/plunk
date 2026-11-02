@@ -13,6 +13,8 @@ const evidence = z.object({
 const input = z.object({email: z.string(), subscribed: z.boolean().default(false),
   data: z.object({isla: evidence}).passthrough()}).strict();
 
+export const approvedSourceCategories = ['Shopify customers', 'current Auth accounts', 'website subscribers', 'product notify', 'ReBorn'] as const;
+
 /** The native POST /contacts controller calls this adapter. Identity, evidence and
  * native contact updates commit together. Re-import can only strengthen vetoes;
  * it cannot erase history, clear review or restore a subscription. */
@@ -52,6 +54,9 @@ export class NativeContactImport {
     try {email = normalizeEmail(row.email);} catch {throw new HttpException(400, 'Invalid email');}
     // Commission readiness with non-routable fixtures without releasing migration.
     if (!this.customerImports && !email.endsWith('.invalid')) throw new HttpException(423, 'Customer imports held');
+    if (!email.endsWith('.invalid') && row.data.isla.provenance.some(p =>
+      !approvedSourceCategories.some(category => category === p.sourceCategory)))
+      throw new HttpException(400, 'Approved source category required');
     const canonical = await this.canonicalEligible(email); // unavailable => no write
     const incoming = row.data.isla;
     return this.prisma.$transaction(async tx => {

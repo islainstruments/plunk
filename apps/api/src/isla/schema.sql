@@ -124,6 +124,19 @@ CREATE TABLE IF NOT EXISTS isla_newsletter.deliveries (
   UNIQUE (campaign_id, content_version, recipient)
 );
 CREATE INDEX IF NOT EXISTS deliveries_due ON isla_newsletter.deliveries(status,next_attempt_at);
+-- Exactly one operational commissioning delivery for Brad's recorded release.
+CREATE TABLE IF NOT EXISTS isla_newsletter.staff_test_authorizations (
+  authorization_id text PRIMARY KEY CHECK (authorization_id='brad-2026-11-02-one-test'),
+  delivery_id text NOT NULL UNIQUE REFERENCES isla_newsletter.deliveries(id),
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE OR REPLACE FUNCTION isla_newsletter.freeze_staff_test() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  RAISE EXCEPTION 'Staff test authorization is immutable';
+END $$;
+DROP TRIGGER IF EXISTS immutable_staff_test ON isla_newsletter.staff_test_authorizations;
+CREATE TRIGGER immutable_staff_test BEFORE UPDATE OR DELETE ON isla_newsletter.staff_test_authorizations
+  FOR EACH ROW EXECUTE FUNCTION isla_newsletter.freeze_staff_test();
 CREATE TABLE IF NOT EXISTS isla_newsletter.provider_events (
   event_id text PRIMARY KEY,
   provider_id text NOT NULL,
@@ -167,6 +180,7 @@ ALTER TABLE isla_newsletter.campaigns ENABLE ROW LEVEL SECURITY;
 ALTER TABLE isla_newsletter.audience_manifests ENABLE ROW LEVEL SECURITY;
 ALTER TABLE isla_newsletter.audience_members ENABLE ROW LEVEL SECURITY;
 ALTER TABLE isla_newsletter.deliveries ENABLE ROW LEVEL SECURITY;
+ALTER TABLE isla_newsletter.staff_test_authorizations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE isla_newsletter.provider_events ENABLE ROW LEVEL SECURITY;
 ALTER TABLE isla_newsletter.provider_throttle ENABLE ROW LEVEL SECURITY;
 DO $$ DECLARE role_name text; BEGIN

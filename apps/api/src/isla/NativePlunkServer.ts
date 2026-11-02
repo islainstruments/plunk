@@ -4,6 +4,7 @@ import {createServer, request} from 'node:http';
 import {spawn} from 'node:child_process';
 import express from 'express';
 import pg from 'pg';
+import {z} from 'zod';
 import {NewsletterLedger} from './NewsletterLedger.js';
 import {NativeNewsletterDelivery} from './NativeNewsletterDelivery.js';
 import {NativeContactImport} from './NativeContactImport.js';
@@ -60,6 +61,13 @@ async function start() {
     max: 2, connectionTimeoutMillis: 3000, statement_timeout: 3000, query_timeout: 4000});
   canonicalPool.on('error', () => {});
   const canonical = new CanonicalMarketing(ledgerPool, canonicalPool);
+  // Private operator release only. Missing file preserves the historical hold;
+  // malformed/over-permissive files fail startup rather than enabling imports.
+  let customerImports = false;
+  try {
+    customerImports = z.object({customerImports: z.boolean()}).strict()
+      .parse(await readPrivateJson('/run/newsletter/import-release.json')).customerImports;
+  } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
   startupStage = 'delivery-ledger';
   // No provider credential, allowlist or send worker exists in held mode.
   let webhookSecret = '';
@@ -91,7 +99,8 @@ async function start() {
   });
   publicApi.use(newsletterRouter(ledger, lookup, config.websiteOrigin));
   const api = createNativePlunkApp({origin: config.websiteOrigin, projectId: project.id, lookup,
-    contactImport: new NativeContactImport(prisma, project.id, email => canonical.eligible(email)),
+    customerImports,
+    contactImport: new NativeContactImport(prisma, project.id, email => canonical.eligible(email), customerImports),
     delivery: new NativeNewsletterDelivery(prisma, ledger, project.id),
     controllers: nativePlunkControllers(), project: () => prisma.project.findUnique({where: {id: project.id}}),
     ready: async () => {await prisma.$queryRaw`SELECT 1`; await redis.ping(); await ledgerPool.query('SELECT id FROM isla_newsletter.deliveries LIMIT 0'); await pool.query('SELECT id,role,active FROM public.staff_users LIMIT 0'); await canonical.eligible('readiness-probe@example.invalid');},

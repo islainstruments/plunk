@@ -1,0 +1,62 @@
+// Local PostgreSQL + native campaigns. HTTP is always mocked, including Brad-shaped fixtures.
+import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
+import pg from '../../node_modules/pg/lib/index.js';
+import {prisma} from '../../apps/api/dist/database/prisma.js';
+import {NewsletterLedger} from '../../apps/api/dist/isla/NewsletterLedger.js';
+import {NativeNewsletterDelivery} from '../../apps/api/dist/isla/NativeNewsletterDelivery.js';
+import {reserveStaffTest, attemptStaffTest, staffTestRecipient, staffTestFrom} from '../../apps/api/dist/isla/StaffTestCommissioning.js';
+const pool=new pg.Pool({connectionString:process.env.DATABASE_URL});
+const scoped=new pg.Pool({connectionString:process.env.DATABASE_URL,options:'-c role=plunk_staff_test_operator'});
+try {
+ assert.equal(new URL(process.env.DATABASE_URL).hostname,'127.0.0.1');
+ assert.equal(new URL(process.env.DATABASE_URL).port,'55473');
+ assert.equal(new URL(process.env.DATABASE_URL).pathname,'/plunk_native');
+ await pool.query('DROP SCHEMA IF EXISTS isla_newsletter CASCADE');
+ await pool.query(await fs.readFile('apps/api/src/isla/schema.sql','utf8'));
+ await pool.query('CREATE ROLE plunk_staff_test_operator');
+ await pool.query(await fs.readFile('apps/api/src/isla/staff-test-role.sql','utf8'));
+ const project=await prisma.project.create({data:{name:'Synthetic commissioning',public:'commission-fixture-public',secret:'commission-fixture-secret',tracking:'DISABLED'}});
+ await prisma.contact.create({data:{projectId:project.id,email:staffTestRecipient,subscribed:true}});
+ const campaign=await prisma.campaign.create({data:{projectId:project.id,name:'Synthetic ONLY',subject:'Fixture commissioning',body:'<p>Fixture</p>',from:'noreply@islaelectronics.com',fromName:'ISLA Electronics',replyTo:staffTestRecipient,type:'MARKETING',status:'DRAFT',audienceType:'ALL'}});
+ let calls=0;let now=new Date();let uncertain=true;let canonical=true;const requests=[];
+ const options={mode:'staff-test',apiKey:'mock-only-never-real',designatedRecipients:[staffTestRecipient],publicOrigin:'https://staff.example.invalid',webhookSecret:'',clock:()=>now,eligibility:async()=>canonical,
+  fetch:async(url,req)=>{assert.equal(url,'https://api.resend.com/emails');calls++;requests.push(req);if(uncertain)throw Error('synthetic lost response');return new Response(JSON.stringify({id:'mock-one-staff-message'}),{status:200});}};
+ const ledger=new NewsletterLedger(scoped,options);
+ await new NewsletterLedger(pool,options).importContact({email:staffTestRecipient,review:false,consentEvidence:'Synthetic isolated commissioning only',provenance:[{sourceCategory:'fixture',sourceSystem:'fixture',sourceRecordId:'fixture',observedAt:now.toISOString()}]});
+ const adapter=new NativeNewsletterDelivery(prisma,ledger,project.id);
+ await adapter.saveContent(campaign.id,'Explicit plain text fixture',0);
+ const {version,draft}=await adapter.staffTestRevision(campaign.id,staffTestRecipient);assert.equal(draft.from,staffTestFrom);
+ await assert.rejects(()=>adapter.prepareStaffTest(campaign.id,staffTestRecipient,undefined,'0'.repeat(64)),/mismatch/);
+ const id=await adapter.prepareStaffTest(campaign.id,staffTestRecipient,undefined,version);
+ const pins=await Promise.all([reserveStaffTest(scoped,id,version),reserveStaffTest(scoped,id,version)]);assert.deepEqual(pins[0],pins[1]);
+ const pinned=new NewsletterLedger(scoped,{...options,authorizedDelivery:pins[0]});
+ await assert.rejects(()=>reserveStaffTest(pool,id,'0'.repeat(64)),/mismatch/);
+ assert.equal(await attemptStaffTest(pool,pinned,id,version),'paused');assert.equal(calls,0);
+ await adapter.resumeStaffTest(campaign.id);
+ const wrongPin=new NewsletterLedger(pool,{...options,authorizedDelivery:{...pins[0],from:'Other <noreply@islaelectronics.com>'}});
+ assert.equal(await wrongPin.attempt(id),'staff-test-not-authorized');assert.equal(calls,0);
+ assert.equal(await attemptStaffTest(pool,pinned,id,version),'uncertain');assert.equal(calls,1);
+ await prisma.campaign.update({where:{id:campaign.id},data:{subject:'Changed fixture'}});
+ const changed=await adapter.staffTestRevision(campaign.id,staffTestRecipient);
+ const second=await adapter.prepareStaffTest(campaign.id,staffTestRecipient,undefined,changed.version);
+ await assert.rejects(()=>reserveStaffTest(pool,second,changed.version),/Prior staff attempt|already reserved/);
+ assert.equal(await pinned.attempt(second),'staff-test-not-authorized');assert.equal(calls,1);
+ // Restart with original immutable binding and same idempotency key/body.
+ now=new Date(now.getTime()+61000);uncertain=false;
+ const restarted=new NewsletterLedger(scoped,{...options,authorizedDelivery:await reserveStaffTest(scoped,id,version)});
+ assert.equal(await attemptStaffTest(pool,restarted,id,version),'accepted');assert.equal(calls,2);
+ assert.equal(requests[0].headers['Idempotency-Key'],requests[1].headers['Idempotency-Key']);assert.equal(requests[0].body,requests[1].body);
+ assert.equal(await attemptStaffTest(pool,restarted,id,version),'accepted');assert.equal(calls,2);
+ await assert.rejects(()=>pool.query('DELETE FROM isla_newsletter.staff_test_authorizations'),/immutable/);
+ await assert.rejects(()=>pool.query('UPDATE isla_newsletter.staff_test_authorizations SET delivery_id=$1',[second]),/immutable/);
+ assert.equal(JSON.parse(requests[0].body).to.length,1);assert.deepEqual(JSON.parse(requests[0].body).to,[staffTestRecipient]);
+ const customer='fixture-customer-hold';await ledger.createCampaign(customer,'customer');
+ const customerId=await ledger.enqueue(customer,version,staffTestRecipient,draft);await ledger.setCampaignState(customer,'running');
+ assert.equal(await restarted.attempt(customerId),'customer-dispatch-disabled');assert.equal(calls,2);
+ assert.equal((await adapter.analytics(campaign.id)).staffTests.accepted,1);
+ console.log('PASS single staff authorization: native frozen-content mismatch, concurrent reserve, pause/resume, sender/delivery pins, uncertain restart SAME key/body, edited-revision rejection, immutable binding, acceptance dedup, customer-purpose hold. Mock HTTP only, no mail sent.');
+ assert.equal((await scoped.query("SELECT has_table_privilege(current_user,'isla_newsletter.staff_test_authorizations','DELETE') AS can_delete")).rows[0].can_delete,false);
+ await assert.rejects(()=>scoped.query('UPDATE public.contacts SET subscribed=true'),/permission denied/);
+ console.log('PASS scoped operator role/RLS with real PostgreSQL: ledger send/retry allowed; native contact mutation and authorization deletion denied.');
+}finally{await prisma.$disconnect();await scoped.end();await pool.end();}
