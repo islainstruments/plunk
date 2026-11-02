@@ -90,6 +90,18 @@ Use a distinct new unit name, DynamicUser, no-new-privileges, IP allowlist for
 the app and exact upstream addresses, filesystem/resource/log restrictions as
 in loopback.service.in. No default route or general egress network is needed.
 Store substituted endpoint/unit details privately, not in corresponding source.
+If host ingress from the internal bridge is blocked, do not edit global firewall
+rules. Instead use a NEW dedicated proxy container with the packaged
+staff-db-proxy.mjs, on the internal app network and its own outbound bridge.
+Only the proxy gets that bridge; app/DB remain internal without a default route.
+Run the same pinned image, overriding entry point to node and supplying only
+the exact allowed app IPv4 and fixed session-pool IPv4 as arguments. The proxy
+has no credentials or mounts, publishes no port, accepts only that app address,
+and forwards exclusively to the fixed target on 5432. TLS is NOT terminated.
+Apply read-only root, non-root UID, cap-drop ALL, no-new-privileges, CPU/memory/PID
+and log limits, restart policy and an explicit listener health check. Verify real
+app TLS/role readiness and a disallowed-source denial. Stop/remove any unused
+owned host proxy units; never restart unrelated services or weaken TLS.
 
 newsletter-ingress.conf.in covers only the agreed same-site newsletter path.
 Page/assets/API/source/preview independently recheck the signed website session
