@@ -14,7 +14,7 @@ import {NewsletterDrafts} from '../NewsletterDrafts.js';
 import {NewsletterLedger} from '../NewsletterLedger.js';
 
 const socket = process.env.TMPDIR;
-if (!socket || !socket.includes('/isla-infrastructure/cache/scratch')) throw new Error('Private fixture socket required');
+if (!socket || !/\/isla-(?:infrastructure|software)\/cache\/scratch/.test(socket)) throw new Error('Private fixture socket required');
 const connection = {host: socket, port: 55439, database: 'isla_newsletter_fixture', user: userInfo().username, password: ''};
 const pool = new pg.Pool(connection);
 const secret = 'fixture-only-auth-secret-at-least-thirty-two-characters';

@@ -1,4 +1,4 @@
-/* ISLA modifications to Plunk — AGPL-3.0. Non-sending by default. */
+/* ISLA modifications to Plunk — AGPL-3.0. Updated 2026-11-02. Non-sending by default. */
 import {createHash, randomBytes, randomUUID} from 'node:crypto';
 import type {Pool, PoolClient} from 'pg';
 import {Webhook} from 'svix';
@@ -265,6 +265,14 @@ export class NewsletterLedger {
         [this.now(), this.interval],
       );
       if (!slot.rowCount) return 'throttled';
+      // The limiter/DB wait is not a consent cache. Recheck after acquiring the
+      // slot, as close to the HTTP boundary as possible. A remote veto committed
+      // after this query cannot recall an already in-flight provider request.
+      if (!(await this.options.eligibility(row.recipient as string)) ||
+        (await db.query('SELECT 1 FROM isla_newsletter.suppressions WHERE email=$1 LIMIT 1', [row.recipient])).rowCount) {
+        await db.query("UPDATE isla_newsletter.deliveries SET status='skipped',reason='ineligible' WHERE id=$1", [id]);
+        return 'skipped';
+      }
       // AUTOCOMMIT before HTTP: survive a killed process after provider acceptance.
       await db.query(
         'UPDATE isla_newsletter.deliveries SET first_attempt_at=coalesce(first_attempt_at,$2), attempts=attempts+1 WHERE id=$1',
@@ -293,6 +301,8 @@ export class NewsletterLedger {
         const retryable = response.status === 429 || response.status >= 500 || response.status === 409;
         const raw = Number(response.headers.get('retry-after'));
         const delay = Number.isFinite(raw) && raw > 0 ? Math.max(60, Math.min(raw, 82800)) : 60;
+        if (response.status === 429) await db.query(`UPDATE isla_newsletter.provider_throttle
+          SET next_at=greatest(next_at,$1) WHERE singleton=true`, [new Date(this.now().getTime() + delay * 1000)]);
         await db.query(`UPDATE isla_newsletter.deliveries SET status=$2,next_attempt_at=$3,reason=$4 WHERE id=$1`, [
           id,
           retryable ? 'queued' : 'review',
@@ -331,18 +341,32 @@ export class NewsletterLedger {
       const reason: SuppressionReason =
         event.event_type === 'email.complained'
           ? 'complaint'
-          : event.event_type === 'email.bounced'
+          : event.event_type === 'email.bounced' && event.bounce_type === 'Permanent'
             ? 'hard_bounce'
             : 'quarantine';
       await this.insertSuppression(db, email, reason, 'resend', event.event_id as string, new Date(event.occurred_at));
     }
   }
+  /** Repair crashes after signed-event persistence without needing a replay. */
+  async reconcileProviderEvents(limit = 100): Promise<number> {
+    if (!Number.isInteger(limit) || limit < 1 || limit > 1000) throw new Error('Invalid reconciliation batch');
+    const pending = await this.pool.query(`SELECT DISTINCT d.provider_id,d.recipient
+      FROM isla_newsletter.provider_events e JOIN isla_newsletter.deliveries d ON d.provider_id=e.provider_id
+      WHERE e.event_type IN ('email.bounced','email.complained','email.suppressed')
+        AND NOT EXISTS(SELECT 1 FROM isla_newsletter.suppressions s
+          WHERE s.email=d.recipient AND s.source='resend' AND s.source_event_id=e.event_id)
+      ORDER BY d.provider_id,d.recipient LIMIT $1`, [limit]);
+    for (const row of pending.rows) await this.locked('recipient:' + row.recipient,
+      db => this.applyProviderSuppressions(db, row.provider_id as string, row.recipient as string));
+    return pending.rows.length;
+  }
   async ingestWebhook(raw: string, headers: Record<string, string>): Promise<'recorded' | 'duplicate' | 'ignored'> {
     new Webhook(this.options.webhookSecret).verify(raw, headers);
-    const verified = JSON.parse(raw) as {type?: unknown; created_at?: unknown; data?: {email_id?: unknown}};
+    const verified = JSON.parse(raw) as {type?: unknown; created_at?: unknown; data?: {email_id?: unknown; bounce?: {type?: unknown}}};
     if (typeof verified.type !== 'string' || !supportedEvents.has(verified.type)) return 'ignored';
     if (
       typeof verified.data?.email_id !== 'string' ||
+      !/^[A-Za-z0-9_-]{1,128}$/.test(verified.data.email_id) ||
       typeof verified.created_at !== 'string' ||
       !Number.isFinite(Date.parse(verified.created_at))
     )
@@ -353,20 +377,31 @@ export class NewsletterLedger {
     // Record first, then reconcile on every replay as well: crash between these two
     // steps must not turn a duplicate into a permanently lost suppression.
     const inserted = await this.pool.query(
-      `INSERT INTO isla_newsletter.provider_events(event_id,provider_id,event_type,occurred_at)
-      VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING RETURNING event_id`,
-      [eventId, providerId, verified.type, verified.created_at],
+      `INSERT INTO isla_newsletter.provider_events(event_id,provider_id,event_type,occurred_at,bounce_type)
+      VALUES($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING RETURNING event_id`,
+      [eventId, providerId, verified.type, verified.created_at,
+        verified.type === 'email.bounced' && verified.data.bounce?.type === 'Permanent' ? 'Permanent' : null],
     );
+    // On replay reconcile the original persisted identity, never a conflicting
+    // replay body. Unrelated provider IDs are retained but cannot target contacts.
+    const original = (await this.pool.query('SELECT provider_id FROM isla_newsletter.provider_events WHERE event_id=$1', [eventId])).rows[0];
+    const recordedProviderId = original.provider_id as string;
     const delivery = (
-      await this.pool.query('SELECT recipient FROM isla_newsletter.deliveries WHERE provider_id=$1', [providerId])
+      await this.pool.query('SELECT recipient FROM isla_newsletter.deliveries WHERE provider_id=$1', [recordedProviderId])
     ).rows[0];
     if (delivery)
       await this.locked('recipient:' + delivery.recipient, db =>
-        this.applyProviderSuppressions(db, providerId, delivery.recipient as string),
+        this.applyProviderSuppressions(db, recordedProviderId, delivery.recipient as string),
       );
     return inserted.rowCount ? 'recorded' : 'duplicate';
   }
   async analytics(campaignId: string): Promise<Record<string, unknown>> {
+    const manifest = (await this.pool.query(`SELECT a.frozen_at,
+      count(m.contact_id)::int AS selected,
+      count(m.contact_id) FILTER(WHERE m.exclusion IS NOT NULL)::int AS excluded,
+      count(m.contact_id) FILTER(WHERE m.exclusion IS NULL AND (a.prepared_cursor IS NULL OR m.contact_id>a.prepared_cursor))::int AS remaining
+      FROM isla_newsletter.audience_manifests a LEFT JOIN isla_newsletter.audience_members m ON m.campaign_id=a.campaign_id
+      WHERE a.campaign_id=$1 GROUP BY a.campaign_id`, [campaignId])).rows[0] ?? null;
     const deliveries = (
       await this.pool.query(
         `SELECT count(*)::int AS intended,
@@ -401,6 +436,7 @@ export class NewsletterLedger {
       caveat:
         'Acceptance is not delivery. Opens/clicks include proxy/scanner activity; total_events counts provider events, not guaranteed individual human actions.',
       trackingCapability: 'not commissioned',
+      manifest,
     };
   }
 }

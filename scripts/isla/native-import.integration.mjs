@@ -20,8 +20,15 @@ try {
  assert.equal((await call('post','/contacts',{email:'missing@example.invalid'})).status,400);
  assert.equal((await call('post','/contacts',row('held@example.com'))).status,423);
  let r=await call('post','/contacts',row('a-import@example.invalid'));assert.equal(r.status,201,r.text);assert.equal(r.body.subscribed,true);const id=r.body.id;
+ r=await call('get','/contacts/'+id+'/marketing-status');assert.equal(r.status,200,r.text);assert.equal(r.body.eligible,true);assert.equal(r.body.canonical.state,'not_suppressed');
+ canonical=false;r=await call('get','/contacts/'+id+'/marketing-status');assert.equal(r.body.eligible,false);assert.equal(r.body.canonical.state,'suppressed');assert.ok(r.body.canonical.checkedAt);
+ canonical='offline';r=await call('get','/contacts/'+id+'/marketing-status');assert.equal(r.status,200);assert.equal(r.body.eligible,null);assert.equal(r.body.canonical.state,'unavailable');assert.equal(r.body.canonical.checkedAt,null);canonical=true;
+ assert.equal((await call('get','/contacts/'+id+'/marketing-status',null,null)).status,401);
+ assert.equal((await call('get','/contacts/'+id+'/marketing-status',null,other.secret)).status,403);
+ assert.equal((await call('get','/contacts/missing/marketing-status')).status,404);
  r=await call('post','/contacts',{...row('a-import@example.invalid'),subscribed:false});assert.equal(r.status,200,r.text);assert.equal(r.body.subscribed,false);
  r=await call('post','/contacts',row('A-IMPORT@example.invalid',{priorSends:[],consentEvidence:'replacement'}));assert.equal(r.status,200,r.text);assert.equal(r.body.id,id);assert.equal(r.body.subscribed,false);assert.equal(r.body.data.isla.priorSends.length,1);assert.equal(r.body.data.isla.consentEvidence,'synthetic fixture only');
+ r=await call('get','/contacts/'+id+'/marketing-status');assert.equal(r.body.eligible,false);assert.deepEqual(r.body.localVetoes,['unsubscribe']);
  r=await call('post','/contacts',row('review-import@example.invalid',{review:true}));assert.equal(r.status,201,r.text);assert.equal(r.body.subscribed,false);
  r=await call('post','/contacts',row('review-import@example.invalid'));assert.equal(r.body.data.isla.review,true);assert.equal(r.body.subscribed,false);
  canonical=false;r=await call('post','/contacts',row('canonical-import@example.invalid'));assert.equal(r.status,201,r.text);assert.equal(r.body.subscribed,false);

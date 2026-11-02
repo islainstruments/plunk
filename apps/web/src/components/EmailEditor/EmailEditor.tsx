@@ -364,6 +364,7 @@ export function EmailEditor({value, onChange, placeholder, subject, from, replyT
 
   return (
     <div className="border border-neutral-200 rounded-lg bg-white">
+      {process.env.NEXT_PUBLIC_ISLA_STAFF === 'true' && <p className="p-3 text-sm border-b border-border">HTML draft preview only. Contact selection renders sample variables, not eligibility or a delivered message. Preview preference URLs are not live: no unsubscribe token is created. The ledger appends a personalized HTML and plain-text footer during authorized preparation. Preserve existing footer/copy. Remote images may load; mailbox rendering still needs an authorized staff test.</p>}
       {/* Mode toggle */}
       <div className="border-b border-neutral-200 bg-neutral-50 p-2 flex flex-col sm:flex-row justify-between sm:items-center gap-2">
         <div className="flex gap-1">

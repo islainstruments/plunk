@@ -7,6 +7,7 @@ import {DeliverabilityTab} from '../../components/analytics/DeliverabilityTab';
 import {EngagementTab} from '../../components/analytics/EngagementTab';
 import {OverviewTab} from '../../components/analytics/OverviewTab';
 import {DashboardLayout} from '../../components/DashboardLayout';
+import {NewsletterOverview} from '../../components/NewsletterOverview';
 import {type AnalyticsTab, useAnalyticsFilters} from '../../lib/hooks/useAnalytics';
 
 const TABS: {value: AnalyticsTab; label: string}[] = [
@@ -17,6 +18,10 @@ const TABS: {value: AnalyticsTab; label: string}[] = [
 ];
 
 export default function AnalyticsPage() {
+  return process.env.NEXT_PUBLIC_ISLA_STAFF === 'true' ? <NewsletterOverview analytics /> : <UpstreamAnalyticsPage />;
+}
+
+function UpstreamAnalyticsPage() {
   const filters = useAnalyticsFilters();
   const {bounds} = filters;
 

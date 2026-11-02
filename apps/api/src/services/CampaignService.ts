@@ -1518,7 +1518,9 @@ export class CampaignService {
   /**
    * Build WHERE clause for campaign recipients (async for segment lookups)
    */
-  private static async buildRecipientWhereAsync(
+  // ISLA 2026-11-02: allow the held manifest adapter to freeze the resolved
+  // native ALL/FILTERED/SEGMENT selection without starting upstream workers.
+  public static async buildRecipientWhereAsync(
     projectId: string,
     campaign: Campaign,
   ): Promise<Prisma.ContactWhereInput> {

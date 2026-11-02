@@ -74,7 +74,7 @@ try {
  const draft=(await draftResponse.json()).data;
  await page.goto(origin+base+'/campaigns/'+draft.id);
  await page.getByText('Resend delivery ledger',{exact:true}).waitFor();
- await page.getByText('Acceptance is not delivery.',{exact:false}).waitFor();
+ await page.getByText('Acceptance is not delivery.',{exact:false}).first().waitFor();
  await page.locator('#newsletter-plain-text').fill('Reviewed native campaign plain text {{email}}');
  const [textSaved]=await Promise.all([
   page.waitForResponse(r=>r.request().method()==='PUT'&&r.url().endsWith('/campaigns/'+draft.id+'/content')),
@@ -92,15 +92,76 @@ try {
  assert.equal(await page.locator('#subject').inputValue(),'Edited browser campaign subject');
  assert.equal(await page.locator('#newsletter-plain-text').inputValue(),'Reviewed native campaign plain text {{email}}');
  assert.equal((await prisma.campaign.findUnique({where:{id:draft.id}})).status,'DRAFT');
+ // Explicitly synthetic UI responses below exercise presentation, not real provider delivery.
+ await page.route('**/campaigns/'+draft.id+'/delivery', route=>route.fulfill({json:{
+  intended:12,queued:2,accepted:8,skipped:1,review:1,unsubscribed:1,
+  providerEvents:[{event_type:'email.delivered',unique_messages:6,total_events:7},{event_type:'email.bounced',unique_messages:1,total_events:2}],
+  caveat:'SYNTHETIC browser metrics fixture — not live delivery',trackingCapability:'unavailable',
+  manifest:{frozen_at:'2026-11-02T00:00:00Z',selected:14,excluded:2,remaining:0},
+  staffTests:{intended:0,queued:0,accepted:0,skipped:0,review:0,unsubscribed:0,providerEvents:[],caveat:'SYNTHETIC staff fixture',trackingCapability:'unavailable'}
+ }}));
+ await page.getByRole('button',{name:'Refresh delivery ledger',exact:true}).click();
+ await page.getByText('75.0% (6 / 8 accepted)',{exact:true}).waitFor();
+ assert.equal(await page.getByRole('row').filter({hasText:'Opened'}).getByText('Unavailable',{exact:true}).count(),2);
+ await page.getByText('Separate staff-test ledger',{exact:true}).click();
+ await page.getByText('N/A — no accepted messages',{exact:true}).first().waitFor();
+ await page.getByText('Plain-text preview (draft only)',{exact:true}).click();
+ assert.ok((await page.locator('pre').first().innerText()).includes('{{email}}'));
+ // Retain unsaved edits through revision conflict and permission errors; never imply a save.
+ await page.route('**/campaigns/'+draft.id+'/content',route=>route.request().method()==='PUT'?route.fulfill({status:409,json:{message:'SYNTHETIC stale revision'}}):route.continue());
+ await page.locator('#newsletter-plain-text').fill('SYNTHETIC retained conflict text');
+ await page.getByRole('button',{name:'Save plain text',exact:true}).click();
+ await page.getByRole('status').filter({hasText:'Revision conflict: your text is retained'}).waitFor();
+ assert.equal(await page.locator('#newsletter-plain-text').inputValue(),'SYNTHETIC retained conflict text');
+ await page.unroute('**/campaigns/'+draft.id+'/content');
+ await page.route('**/campaigns/'+draft.id+'/content',route=>route.request().method()==='PUT'?route.fulfill({status:403,json:{message:'SYNTHETIC permission failure'}}):route.continue());
+ await page.getByRole('button',{name:'Save plain text',exact:true}).click();
+ await page.getByRole('status').filter({hasText:'Permission denied'}).waitFor();
+ assert.equal(await page.locator('#newsletter-plain-text').inputValue(),'SYNTHETIC retained conflict text');
+ for(const theme of ['light','dark']) {
+  await page.emulateMedia({colorScheme:theme});
+  for(const width of [1440,390]) {
+   await page.setViewportSize({width,height:1000});
+   await page.waitForTimeout(150);
+   assert.equal(await page.locator('html').evaluate(el=>el.classList.contains('dark')),theme==='dark');
+   assert.ok(await page.locator('body').evaluate(el=>el.scrollWidth<=window.innerWidth));
+   await page.locator('#newsletter-plain-text').focus();
+   assert.equal(await page.locator('#newsletter-plain-text').evaluate(el=>getComputedStyle(el).outlineStyle),'solid');
+   await page.screenshot({path:`newsletter-fixture-${theme}-${width}.png`,fullPage:true});
+  }
+ }
+ await page.unroute('**/campaigns/'+draft.id+'/content');
+ await page.unroute('**/campaigns/'+draft.id+'/delivery');
+ page.once('dialog',dialog=>dialog.accept());
+ await page.getByRole('button',{name:'Load latest saved text',exact:true}).click();
+ await page.setViewportSize({width:1440,height:1000});
+ console.log('PASS SYNTHETIC metrics/rates, separate zero-denominator ledger, draft preview, retained409/403 edits, both themes and desktop/mobile focus/overflow checks');
  await page.getByRole('button',{name:'Send',exact:true}).click();
  for(const label of ['Send test email','Send now','Schedule for later']){
   assert.equal(await page.getByRole('menuitem').filter({hasText:label}).getAttribute('aria-disabled'),'true');
  }
  await page.keyboard.press('Escape');
  console.log('PASS native campaign draft edit/reload persistence; test/send/schedule visibly held');
+ const contact=await prisma.contact.create({data:{projectId:project.id,email:'suppression-ui@example.invalid',subscribed:false}});
+ const projection={version:1,nativeSubscribed:false,review:true,localVetoes:['unsubscribe'],canonical:{state:'suppressed',reason:'canonical-marketing-veto',checkedAt:'2026-11-02T00:00:00Z'},eligible:false,consentEvidencePresent:true};
+ await page.route('**/contacts/'+contact.id+'/marketing-status',route=>route.fulfill({json:projection}));
+ await page.goto(origin+base+'/contacts/'+contact.id);
+ await page.getByRole('heading',{name:'Durable marketing suppression',exact:true}).waitFor();
+ await page.getByText('Excluded from marketing',{exact:true}).waitFor();
+ assert.equal(await page.getByRole('button',{name:'Save Changes',exact:true}).isDisabled(),true);
+ await page.unroute('**/contacts/'+contact.id+'/marketing-status');
+ projection.canonical={state:'unavailable',reason:null,checkedAt:null};projection.eligible=null;
+ await page.route('**/contacts/'+contact.id+'/marketing-status',route=>route.fulfill({json:projection}));
+ await page.getByRole('button',{name:'Refresh suppression status',exact:true}).click();
+ await page.getByText('Unknown — fail closed',{exact:true}).waitFor();
+ await page.unroute('**/contacts/'+contact.id+'/marketing-status');
+ await page.route('**/contacts/'+contact.id+'/marketing-status',route=>route.fulfill({status:503,json:{message:'SYNTHETIC service unavailable'}}));
+ await page.getByRole('button',{name:'Refresh suppression status',exact:true}).click();
+ await page.getByRole('alert').filter({hasText:'Suppression details unavailable'}).waitFor();
+ console.log('PASS SYNTHETIC suppression projection, canonical unavailable fail-closed, service503 alert and held contact mutations');
  await page.screenshot({path:'native-plunk-campaign-editor.png',fullPage:true});
  console.log('BROWSER_ERRORS',JSON.stringify(errors));console.log('HTTP_ERRORS',JSON.stringify(failed));
- assert.deepEqual(errors,[]);assert.deepEqual(failed,[]);
+ assert.deepEqual(errors,[]);assert.deepEqual(failed.filter(([status])=>![403,409,503].includes(status)),[]);
 } catch(error) {
  if(browser){for(const context of browser.contexts()){for(const page of context.pages()){console.log('FAILURE_PAGE',await page.locator('body').innerText());await page.screenshot({path:'native-ui-failure.png',fullPage:true});}}}
  throw error;

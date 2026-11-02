@@ -71,6 +71,40 @@ CREATE TABLE IF NOT EXISTS isla_newsletter.campaigns (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 ALTER TABLE isla_newsletter.campaigns ADD COLUMN IF NOT EXISTS content_version text;
+-- ISLA 2026-11-02: atomic frozen audience; only the preparation cursor mutates.
+CREATE TABLE IF NOT EXISTS isla_newsletter.audience_manifests (
+  campaign_id text PRIMARY KEY REFERENCES isla_newsletter.campaigns(id),
+  version text NOT NULL,
+  selection jsonb NOT NULL,
+  exclusions jsonb NOT NULL,
+  prepared_cursor text,
+  frozen_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS isla_newsletter.audience_members (
+  campaign_id text NOT NULL REFERENCES isla_newsletter.audience_manifests(campaign_id),
+  contact_id text NOT NULL,
+  email text NOT NULL,
+  personalization jsonb NOT NULL,
+  exclusion text,
+  PRIMARY KEY(campaign_id,contact_id),
+  UNIQUE(campaign_id,email)
+);
+CREATE OR REPLACE FUNCTION isla_newsletter.freeze_audience() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  IF TG_TABLE_NAME='audience_members' THEN
+    RAISE EXCEPTION 'Audience membership is immutable';
+  ELSIF ROW(NEW.campaign_id,NEW.version,NEW.selection,NEW.exclusions,NEW.frozen_at)
+    IS DISTINCT FROM ROW(OLD.campaign_id,OLD.version,OLD.selection,OLD.exclusions,OLD.frozen_at) THEN
+    RAISE EXCEPTION 'Audience definition is immutable';
+  END IF;
+  RETURN NEW;
+END $$;
+DROP TRIGGER IF EXISTS immutable_audience ON isla_newsletter.audience_members;
+CREATE TRIGGER immutable_audience BEFORE UPDATE OR DELETE ON isla_newsletter.audience_members
+  FOR EACH ROW EXECUTE FUNCTION isla_newsletter.freeze_audience();
+DROP TRIGGER IF EXISTS immutable_manifest ON isla_newsletter.audience_manifests;
+CREATE TRIGGER immutable_manifest BEFORE UPDATE ON isla_newsletter.audience_manifests
+  FOR EACH ROW EXECUTE FUNCTION isla_newsletter.freeze_audience();
 CREATE TABLE IF NOT EXISTS isla_newsletter.deliveries (
   id text PRIMARY KEY,
   campaign_id text NOT NULL REFERENCES isla_newsletter.campaigns(id),
@@ -98,6 +132,9 @@ CREATE TABLE IF NOT EXISTS isla_newsletter.provider_events (
   received_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS provider_events_message ON isla_newsletter.provider_events(provider_id);
+-- ISLA 2026-11-02: Only an explicitly Permanent bounce is a hard bounce.
+-- Older/missing/Temporary classifications remain a conservative review veto.
+ALTER TABLE isla_newsletter.provider_events ADD COLUMN IF NOT EXISTS bounce_type text;
 -- Shared limiter for all newsletter workers in this database, including restarts.
 CREATE TABLE IF NOT EXISTS isla_newsletter.provider_throttle (
   singleton boolean PRIMARY KEY DEFAULT true CHECK (singleton),
@@ -127,6 +164,8 @@ ALTER TABLE isla_newsletter.draft_revisions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE isla_newsletter.suppressions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE isla_newsletter.suppression_exports ENABLE ROW LEVEL SECURITY;
 ALTER TABLE isla_newsletter.campaigns ENABLE ROW LEVEL SECURITY;
+ALTER TABLE isla_newsletter.audience_manifests ENABLE ROW LEVEL SECURITY;
+ALTER TABLE isla_newsletter.audience_members ENABLE ROW LEVEL SECURITY;
 ALTER TABLE isla_newsletter.deliveries ENABLE ROW LEVEL SECURITY;
 ALTER TABLE isla_newsletter.provider_events ENABLE ROW LEVEL SECURITY;
 ALTER TABLE isla_newsletter.provider_throttle ENABLE ROW LEVEL SECURITY;

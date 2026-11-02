@@ -1,6 +1,52 @@
 @import 'tailwindcss';
 @import 'tw-animate-css';
 
+/* ISLA staff adaptation 2026-11-02, AGPL-3.0. Palette/font from website
+   globals.css; native email preview documents retain their own authored colors. */
+@font-face {
+    font-family: 'ISLA Text';
+    src: url('../assets/isla-text.woff2') format('woff2');
+    font-style: normal;
+    font-weight: 400;
+    font-display: swap;
+}
+html[data-isla-staff='true'] {
+    --background: 0 0% 94%;
+    --foreground: 0 0% 7%;
+    --card: 0 0% 98%;
+    --card-foreground: 0 0% 7%;
+    --border: 0 0% 82%;
+    --muted-foreground: 0 0% 33%;
+    --ring: 1 77% 43%;
+    font-family: 'ISLA Text', Arial, sans-serif;
+    color: hsl(var(--foreground));
+    background: hsl(var(--background));
+}
+html[data-isla-staff='true'].dark {
+    color-scheme: dark;
+    --background: 0 0% 7%;
+    --foreground: 0 0% 94%;
+    --card: 0 0% 10%;
+    --card-foreground: 0 0% 94%;
+    --muted-foreground: 0 0% 70%;
+    --border: 0 0% 27%;
+    --color-white: #1a1a1a;
+    --color-neutral-50: #111111;
+    --color-neutral-100: #2a2a2a;
+    --color-neutral-200: #444444;
+    --color-neutral-300: #666666;
+    --color-neutral-400: #aaaaaa;
+    --color-neutral-500: #aaaaaa;
+    --color-neutral-600: #cccccc;
+    --color-neutral-700: #dddddd;
+    --color-neutral-800: #e8e8e8;
+    --color-neutral-900: #f0f0f0;
+}
+html[data-isla-staff='true'] :is(button, a, summary, textarea, input):focus-visible {
+    outline: 2px solid #e53935;
+    outline-offset: 3px;
+}
+
 @plugin '@tailwindcss/forms';
 @plugin '@tailwindcss/typography';
 

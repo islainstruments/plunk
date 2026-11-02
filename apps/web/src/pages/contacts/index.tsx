@@ -471,17 +471,17 @@ export default function ContactsPage() {
             <div className="flex-1 min-w-0">
               <h1 className="text-2xl sm:text-3xl font-bold text-neutral-900">Contacts</h1>
               <p className="text-neutral-500 mt-2 text-sm sm:text-base">
-                Everyone you can send to.{' '}
+                {process.env.NEXT_PUBLIC_ISLA_STAFF === 'true' ? 'Stored contacts — not an approved send audience. ' : 'Everyone you can send to. '}
                 {totalCount > 0 ? `${totalCount.toLocaleString()} ${hasActiveFilters ? 'matching' : 'total'}` : ''}
               </p>
             </div>
             <div className="flex gap-2">
-              <Button variant="outline" onClick={() => setShowImportDialog(true)} className="flex-1 sm:flex-none">
+              <Button disabled={process.env.NEXT_PUBLIC_ISLA_STAFF === 'true'} variant="outline" onClick={() => setShowImportDialog(true)} className="flex-1 sm:flex-none">
                 <Upload className="h-4 w-4" />
                 <span className="hidden sm:inline">Import CSV</span>
                 <span className="sm:hidden">Import</span>
               </Button>
-              <Button onClick={() => setShowCreateDialog(true)} className="flex-1 sm:flex-none">
+              <Button disabled={process.env.NEXT_PUBLIC_ISLA_STAFF === 'true'} onClick={() => setShowCreateDialog(true)} className="flex-1 sm:flex-none">
                 <Plus className="h-4 w-4" />
                 <span className="hidden sm:inline">Add contact</span>
                 <span className="sm:hidden">Add</span>
@@ -489,6 +489,7 @@ export default function ContactsPage() {
             </div>
           </div>
 
+          {process.env.NEXT_PUBLIC_ISLA_STAFF === 'true' && <p className="rounded border p-4 text-sm">Customer imports and contact mutations are held. Imports cannot undo marketing opt-outs, hard-bounce/complaint suppressions or review flags. Inspect a contact for fresh local/canonical status; a subscribed badge alone is not send eligibility. Essential account/order/licence email is separate.</p>}
           {/* Control row. One aligned cluster of 32px-tall controls:
               - Search input: always present (both views).
               - Status filter: a FilterPill, the same in both views.
@@ -545,11 +546,11 @@ export default function ContactsPage() {
                 ) : null
               }
             >
-              <Button variant="outline" size="sm" onClick={() => handleBulkAction('subscribe')}>
+              <Button disabled={process.env.NEXT_PUBLIC_ISLA_STAFF === 'true'} variant="outline" size="sm" onClick={() => handleBulkAction('subscribe')}>
                 <MailCheck className="h-4 w-4" />
                 Subscribe
               </Button>
-              <Button variant="outline" size="sm" onClick={() => handleBulkAction('unsubscribe')}>
+              <Button disabled={process.env.NEXT_PUBLIC_ISLA_STAFF === 'true'} variant="outline" size="sm" onClick={() => handleBulkAction('unsubscribe')}>
                 <MailX className="h-4 w-4" />
                 Unsubscribe
               </Button>
@@ -557,6 +558,7 @@ export default function ContactsPage() {
                 variant="outline"
                 size="sm"
                 onClick={() => handleBulkAction('delete')}
+                disabled={process.env.NEXT_PUBLIC_ISLA_STAFF === 'true'}
                 className="text-neutral-700 transition-colors hover:bg-red-50 hover:text-red-700 hover:border-red-200"
               >
                 <Trash2 className="h-4 w-4" />
@@ -589,7 +591,7 @@ export default function ContactsPage() {
                       title="No contacts yet"
                       description="Add contacts to start tracking engagement."
                       action={
-                        <Button onClick={() => setShowCreateDialog(true)}>
+                        <Button disabled={process.env.NEXT_PUBLIC_ISLA_STAFF === 'true'} onClick={() => setShowCreateDialog(true)}>
                           <Plus className="h-4 w-4" />
                           Add contact
                         </Button>

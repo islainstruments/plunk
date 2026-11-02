@@ -195,7 +195,7 @@ export default function CampaignDetailsPage() {
     error: statsError,
     mutate: mutateStats,
   } = useSWR<{data: CampaignStats}>(
-    id && campaign?.data.status !== CampaignStatus.DRAFT ? `/campaigns/${id}/stats` : null,
+    process.env.NEXT_PUBLIC_ISLA_STAFF !== 'true' && id && campaign?.data.status !== CampaignStatus.DRAFT ? `/campaigns/${id}/stats` : null,
     {
       revalidateOnFocus: false,
       refreshInterval: campaign?.data.status === CampaignStatus.SENDING ? 15000 : 0, // Refresh every 15s while sending
@@ -487,7 +487,7 @@ export default function CampaignDetailsPage() {
   // and clamp: sentCount is read partly from Redis and can briefly overshoot the total.
   const sendProgress = s && s.totalRecipients > 0 ? Math.min((s.sentCount / s.totalRecipients) * 100, 100) : 0;
   // A scheduled campaign has stats, but they are all zero until it starts sending.
-  const hasResults = c.status === CampaignStatus.SENDING || c.status === CampaignStatus.SENT;
+  const hasResults = process.env.NEXT_PUBLIC_ISLA_STAFF !== 'true' && (c.status === CampaignStatus.SENDING || c.status === CampaignStatus.SENT);
 
   // Cancelling has two very different outcomes, and the dialog has to name the one
   // the user is about to get. A campaign with nothing sent comes back as an editable
@@ -522,7 +522,7 @@ export default function CampaignDetailsPage() {
     return (
       <DashboardLayout>
         <NextSeo title={campaign.data.name} />
-        {process.env.NEXT_PUBLIC_ISLA_STAFF === 'true' && <NewsletterDelivery campaignId={c.id} />}
+        {process.env.NEXT_PUBLIC_ISLA_STAFF === 'true' && <NewsletterDelivery key={c.id} campaignId={c.id} />}
         <form onSubmit={handleSave} className={`space-y-6 ${hasChanges ? 'pb-32' : ''}`}>
           {/* Header */}
           <div className="space-y-4">

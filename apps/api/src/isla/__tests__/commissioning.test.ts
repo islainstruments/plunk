@@ -13,7 +13,7 @@ import {newsletterRouter} from '../NewsletterRouter.js';
 
 // Deliberately no DATABASE_URL: cannot accidentally use production credentials.
 const socket = process.env.TMPDIR;
-if (!socket || !socket.includes('/isla-infrastructure/cache/scratch'))
+if (!socket || !/\/isla-(?:infrastructure|software)\/cache\/scratch/.test(socket))
   throw new Error('Private scratch socket required');
 const pool = new pg.Pool({host: socket, port: 55439, database: 'isla_newsletter_fixture', max: 8});
 const secret = 'whsec_' + Buffer.from('fixture-webhook-secret-not-production').toString('base64');
@@ -343,6 +343,59 @@ describe('durable Resend commissioning ledger (mock provider, real PostgreSQL)',
 });
 
 describe('verified events and public preference routes (signed synthetic fixtures)', () => {
+  it.each(['Permanent', 'Temporary', 'Unknown', null])('classifies %s bounce conservatively', async type => {
+    await seed().then(id => ledger.attempt(id));
+    const at = new Date();
+    const raw = JSON.stringify({type: 'email.bounced', created_at: at.toISOString(),
+      data: {email_id: 'provider-fixture', bounce: {type}}});
+    const headers = {'svix-id': 'bounce-policy', 'svix-timestamp': String(Math.floor(at.getTime() / 1000)),
+      'svix-signature': new Webhook(secret).sign('bounce-policy', at, raw)};
+    await ledger.ingestWebhook(raw, headers);
+    expect((await pool.query('SELECT reason FROM isla_newsletter.suppressions')).rows[0].reason)
+      .toBe(type === 'Permanent' ? 'hard_bounce' : 'quarantine');
+  });
+  it('restart reconciliation repairs persisted events without a provider replay', async () => {
+    await seed().then(id => ledger.attempt(id));
+    const e = signed('email.complained');
+    await ledger.ingestWebhook(e.raw, e.headers);
+    await pool.query('DELETE FROM isla_newsletter.suppressions');
+    expect(await make().reconcileProviderEvents()).toBe(1);
+    expect(await make().reconcileProviderEvents()).toBe(0);
+    expect((await pool.query('SELECT reason FROM isla_newsletter.suppressions')).rows[0].reason).toBe('complaint');
+  });
+  it('conflicting signed replay cannot retarget a persisted provider event', async () => {
+    await seed().then(id => ledger.attempt(id));
+    const original = signed('email.delivered', 'unrelated-provider');
+    await ledger.ingestWebhook(original.raw, original.headers);
+    const conflict = signed('email.complained');
+    expect(await ledger.ingestWebhook(conflict.raw, conflict.headers)).toBe('duplicate');
+    expect((await pool.query('SELECT * FROM isla_newsletter.suppressions')).rowCount).toBe(0);
+    expect((await ledger.analytics('campaign-fixture')).providerEvents).toEqual([]);
+  });
+  it.each(['email.failed', 'email.delivery_delayed'])('records %s without inventing a hard bounce', async type => {
+    await seed().then(id => ledger.attempt(id));
+    const e = signed(type);
+    await ledger.ingestWebhook(e.raw, e.headers);
+    expect((await pool.query('SELECT * FROM isla_newsletter.suppressions')).rowCount).toBe(0);
+    expect((await ledger.analytics('campaign-fixture')).providerEvents)
+      .toEqual([{event_type: type, total_events: 1, unique_messages: 1}]);
+  });
+  it('rechecks canonical veto after reserving the provider slot', async () => {
+    const id = await seed();
+    eligibility.mockResolvedValueOnce(true).mockResolvedValueOnce(false);
+    expect(await ledger.attempt(id)).toBe('skipped');
+    expect(transport).not.toHaveBeenCalled();
+    expect((await row(id)).attempts).toBe(0);
+  });
+  it('429 backoff also throttles other deliveries after worker restart', async () => {
+    const id = await seed();
+    transport.mockResolvedValueOnce(new Response('{}', {status: 429, headers: {'retry-after': '120'}}));
+    expect(await ledger.attempt(id)).toBe('retry');
+    now = new Date(now.getTime() + 61000);
+    const second = await ledger.enqueue('campaign-fixture', 'v2', recipient, draft);
+    expect(await make().attempt(second)).toBe('throttled');
+    expect(transport).toHaveBeenCalledTimes(1);
+  });
   it('accepts a valid signed event and deduplicates replays', async () => {
     await seed().then(id => ledger.attempt(id));
     const e = signed('email.delivered');
@@ -420,6 +473,8 @@ describe('verified events and public preference routes (signed synthetic fixture
     expect((await pool.query('SELECT * FROM isla_newsletter.suppressions')).rowCount).toBe(0);
     const post = await request(app()).post(url.pathname).type('form').send('List-Unsubscribe=One-Click');
     expect(post.status).toBe(200);
+    expect(post.headers['content-type']).toContain('text/plain');
+    expect(post.headers.location).toBeUndefined();
     expect(await ledger.attempt(id)).toBe('skipped');
     expect((await ledger.analytics('campaign-fixture')).unsubscribed).toBe(1);
     expect((await request(app()).post(url.pathname)).status).toBe(200);

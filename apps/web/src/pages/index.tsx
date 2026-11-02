@@ -37,6 +37,7 @@ import useSWR from 'swr';
 import {AnimatedNumber} from '../components/AnimatedNumber';
 import {ApiKeyDisplay} from '../components/ApiKeyDisplay';
 import {DashboardLayout} from '../components/DashboardLayout';
+import {NewsletterOverview} from '../components/NewsletterOverview';
 import {HomeNotice} from '../components/HomeNotice';
 import {QuickStart} from '../components/QuickStart';
 import {useActiveProject} from '../lib/contexts/ActiveProjectProvider';
@@ -255,6 +256,10 @@ function CompactActivityRow({activity}: {activity: Activity}) {
 }
 
 export default function Index() {
+  return process.env.NEXT_PUBLIC_ISLA_STAFF === 'true' ? <NewsletterOverview /> : <UpstreamIndex />;
+}
+
+function UpstreamIndex() {
   const {activeProject} = useActiveProject();
   const {totalContacts, totalEmailsSent, totalCampaigns, openRate, isLoading} = useDashboardStats();
   const {setupState, isLoading: isLoadingSetupState} = useProjectSetupState(activeProject?.id);

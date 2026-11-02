@@ -76,6 +76,7 @@ async function start() {
     if (syncing) return;
     syncing = true;
     void (async () => {
+      await ledger.reconcileProviderEvents();
       // Reflect local vetoes in native contact screens without emitting native
       // workflow events or touching essential website/account records.
       await ledgerPool.query(`UPDATE public.contacts c SET subscribed=false WHERE c."projectId"=$1

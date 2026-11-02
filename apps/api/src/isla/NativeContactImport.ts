@@ -1,4 +1,4 @@
-/* ISLA native contact import policy. AGPL-3.0. No workflow events or sending. */
+/* ISLA native contact import policy. AGPL-3.0. Updated 2026-11-02. No workflow events or sending. */
 import type {PrismaClient} from '@plunk/db';
 import {z} from 'zod';
 import {HttpException} from '../exceptions/index.js';
@@ -20,6 +20,29 @@ export class NativeContactImport {
   constructor(private readonly prisma: PrismaClient, private readonly projectId: string,
     private readonly canonicalEligible: (email: string) => Promise<boolean>,
     private readonly customerImports = false) {}
+
+  /** Read-only projection. Never turn a canonical veto into a subscription write. */
+  async marketingStatus(id: string) {
+    const contact = await this.prisma.contact.findFirst({where: {id, projectId: this.projectId}});
+    if (!contact) throw Object.assign(new Error('Contact unavailable'), {code: 404});
+    const [evidence] = await this.prisma.$queryRaw<{review: boolean; consent_evidence: string | null}[]>`
+      SELECT review,consent_evidence FROM isla_newsletter.contacts WHERE email=${contact.email}`;
+    const vetoes = await this.prisma.$queryRaw<{reason: string}[]>`
+      SELECT DISTINCT reason FROM isla_newsletter.suppressions WHERE email=${contact.email} ORDER BY reason`;
+    let state: 'not_suppressed' | 'suppressed' | 'unavailable' = 'unavailable';
+    let checkedAt: string | null = null;
+    try {
+      state = await this.canonicalEligible(contact.email) ? 'not_suppressed' : 'suppressed';
+      checkedAt = new Date().toISOString();
+    } catch { /* No stale positive or private dependency error is returned. */ }
+    const localVetoes = vetoes.map(v => v.reason);
+    const review = evidence?.review ?? true;
+    const consentEvidencePresent = !!evidence?.consent_evidence;
+    const knownVeto = !contact.subscribed || review || !consentEvidencePresent || localVetoes.length > 0 || state === 'suppressed';
+    return {version: 1, nativeSubscribed: contact.subscribed, review, localVetoes, consentEvidencePresent,
+      canonical: {state, reason: state === 'suppressed' ? 'canonical-marketing-veto' : null, checkedAt},
+      eligible: knownVeto ? false : state === 'unavailable' ? null : true};
+  }
 
   async upsert(body: unknown) {
     const parsed = input.safeParse(body);

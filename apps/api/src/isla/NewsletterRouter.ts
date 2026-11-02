@@ -29,6 +29,11 @@ export function newsletterRouter(ledger: NewsletterLedger, staff: StaffLookup, w
   });
   router.post('/newsletters/unsubscribe/:token', urlencoded({extended: false, limit: '2kb'}), async (req, res) => {
     await ledger.unsubscribe(req.params.token);
+    // RFC8058 receivers need no navigation, HTML, redirect or authentication.
+    if (req.body?.['List-Unsubscribe'] === 'One-Click') {
+      res.status(200).type('text').send('Marketing preference recorded.');
+      return;
+    }
     res
       .type('html')
       .send(

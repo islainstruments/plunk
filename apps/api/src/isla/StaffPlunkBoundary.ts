@@ -9,7 +9,7 @@ export const hasVerifiedStaffPlunk = (res: Response) => verified.has(res);
 const reads = [
   /^\/templates(?:\/[^/]+(?:\/usage)?)?$/,
   /^\/campaigns(?:\/[^/]+(?:\/(?:stats|recipients|delivery|content))?)?$/,
-  /^\/contacts(?:\/fields(?:\/[^/]+\/(?:values|usage))?|\/[^/]+)?$/,
+  /^\/contacts(?:\/fields(?:\/[^/]+\/(?:values|usage))?|\/[^/]+(?:\/marketing-status)?)?$/,
   /^\/segments(?:\/[^/]+(?:\/contacts)?)?$/,
   /^\/analytics\/(?:overview|timeseries|deliverability|leaderboard|links|heatmap|audience|events)$/,
   /^\/activity(?:\/(?:stats|recent-count|types|upcoming|emails\/[^/]+))?$/,

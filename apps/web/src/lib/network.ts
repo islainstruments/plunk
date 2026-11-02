@@ -23,6 +23,22 @@ interface ApiResponse {
   [key: string]: unknown;
 }
 
+// ISLA modification 2026-11-02, AGPL-3.0: actionable staff-boundary failures.
+export class NetworkError extends Error {
+  constructor(public readonly status: number, message: string) {super(message); this.name = 'NetworkError';}
+}
+function checkStaffFailure(status: number): void {
+  if (process.env.NEXT_PUBLIC_ISLA_STAFF !== 'true' || status < 400) return;
+  const messages: Record<number, string> = {
+    401: 'Staff session expired or missing. Sign in through the staff website.',
+    403: 'Permission denied. Writes require an active admin role and the same-origin staff website.',
+    409: 'Revision conflict. Keep your edits and reconcile with the latest saved version.',
+    423: 'Commissioning hold: this action is disabled. No import or send was performed.',
+    503: 'A required service is unavailable. Retry later; no success is implied.',
+  };
+  if (messages[status]) throw new NetworkError(status, messages[status]);
+}
+
 export class network {
   public static async fetch<T, Schema extends TypedSchema | void = void>(
     method: 'GET' | 'PUT' | 'POST' | 'DELETE' | 'PATCH',
@@ -49,6 +65,7 @@ export class network {
       credentials: 'include',
     });
 
+    checkStaffFailure(response.status);
     // Handle 204 No Content responses (no body to parse)
     if (response.status === 204) {
       return {} as T;
@@ -97,6 +114,7 @@ export class network {
       credentials: 'include',
     });
 
+    checkStaffFailure(response.status);
     const res = (await response.json()) as ApiResponse;
 
     if (response.status >= 400) {

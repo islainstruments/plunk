@@ -111,6 +111,19 @@ function ProjectGuard({children}: {children: React.ReactNode}) {
  * @param props Default nextjs props
  */
 export default function WithProviders(props: AppProps) {
+  useEffect(() => {
+    if (process.env.NEXT_PUBLIC_ISLA_STAFF !== 'true') return;
+    document.documentElement.dataset.islaStaff = 'true';
+    const media = window.matchMedia('(prefers-color-scheme: dark)');
+    let parentRoot: HTMLElement | null = null;
+    try {if (window.parent !== window) parentRoot = window.parent.document.documentElement;} catch { /* Same-origin embedding only; standalone follows system. */ }
+    const sync = () => document.documentElement.classList.toggle('dark', parentRoot ? parentRoot.classList.contains('dark') : media.matches);
+    const observer = new MutationObserver(sync);
+    if (parentRoot) observer.observe(parentRoot, {attributes: true, attributeFilter: ['class']});
+    media.addEventListener('change', sync);
+    sync();
+    return () => {observer.disconnect(); media.removeEventListener('change', sync);};
+  }, []);
   return (
     <NuqsAdapter>
       <SWRConfig

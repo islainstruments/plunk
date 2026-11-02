@@ -5,7 +5,7 @@ import {afterAll, beforeAll, beforeEach, describe, expect, it} from 'vitest';
 import {CanonicalMarketing} from '../CanonicalMarketing.js';
 
 const socket = process.env.TMPDIR;
-if (!socket?.includes('/isla-infrastructure/cache/scratch')) throw new Error('Fixture socket required');
+if (!(socket && /\/isla-(?:infrastructure|software)\/cache\/scratch/.test(socket))) throw new Error('Fixture socket required');
 const pool = new pg.Pool({host: socket, port: 55439, database: 'isla_newsletter_fixture'});
 const address = 'canonical@example.invalid';
 let integration: CanonicalMarketing;

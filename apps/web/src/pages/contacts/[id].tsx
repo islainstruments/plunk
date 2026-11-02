@@ -18,6 +18,7 @@ import {NextSeo} from 'next-seo';
 import {useRouter} from 'next/router';
 import {useEffect, useState} from 'react';
 import {DashboardLayout} from '../../components/DashboardLayout';
+import {MarketingStatus} from '../../components/MarketingStatus';
 import {KeyValueEditor} from '../../components/KeyValueEditor';
 import {ActivityFeed} from '../../components/ActivityFeed';
 import {network} from '../../lib/network';
@@ -157,12 +158,13 @@ export default function ContactDetailPage() {
                 </p>
               </div>
             </div>
-            <Button variant="destructive" onClick={() => setShowDeleteDialog(true)} className="flex-shrink-0">
+            <Button disabled={process.env.NEXT_PUBLIC_ISLA_STAFF === 'true'} variant="destructive" onClick={() => setShowDeleteDialog(true)} className="flex-shrink-0">
               <Trash2 className="h-4 w-4" />
               <span className="hidden sm:inline">Delete contact</span>
             </Button>
           </div>
 
+          {process.env.NEXT_PUBLIC_ISLA_STAFF === 'true' && <><MarketingStatus key={contact.id} contactId={contact.id} /><p>Contact edits, deletion and resubscription are held. Native subscription flags do not override durable local/canonical vetoes.</p></>}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* Edit Form */}
             <div className="lg:col-span-2 space-y-6">
@@ -172,6 +174,7 @@ export default function ContactDetailPage() {
                 </CardHeader>
                 <CardContent>
                   <form onSubmit={handleSubmit} className="space-y-4">
+                    <fieldset disabled={process.env.NEXT_PUBLIC_ISLA_STAFF === 'true'} className="space-y-4">
                     <div>
                       <Label htmlFor="email">Email address</Label>
                       <Input
@@ -213,10 +216,11 @@ export default function ContactDetailPage() {
                       )}
                     </div>
 
-                    <Button type="submit" disabled={isSubmitting}>
+                    <Button type="submit" disabled={isSubmitting || process.env.NEXT_PUBLIC_ISLA_STAFF === 'true'}>
                       <Save className="h-4 w-4" />
                       {isSubmitting ? 'Saving…' : 'Save Changes'}
                     </Button>
+                    </fieldset>
                   </form>
                 </CardContent>
               </Card>
@@ -303,7 +307,7 @@ export default function ContactDetailPage() {
               </Card>
 
               {/* Public Links Card */}
-              <Card>
+              {process.env.NEXT_PUBLIC_ISLA_STAFF !== 'true' && <Card>
                 <CardHeader>
                   <CardTitle>Public links</CardTitle>
                 </CardHeader>
@@ -461,7 +465,7 @@ export default function ContactDetailPage() {
                     </div>
                   </div>
                 </CardContent>
-              </Card>
+              </Card>}
             </div>
           </div>
         </div>

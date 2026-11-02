@@ -3,6 +3,7 @@ import {createHash} from 'node:crypto';
 import {renderTemplate} from '@plunk/shared';
 import type {PrismaClient} from '@plunk/db';
 import type {NewsletterLedger} from './NewsletterLedger.js';
+import {NativeAudience} from './NativeAudience.js';
 
 
 /** The native editor/campaign remain the source of content and audience. The
@@ -71,7 +72,9 @@ export class NativeNewsletterDelivery {
   }
   /** Internal native audience traversal, never installed as an HTTP dispatch route.
    * Customer purpose stays non-dispatchable even if staff test transport opens. */
-  async prepareCampaignPage(campaignId: string, plainText?: string, cursor?: string) {
+  async prepareCampaignPage(campaignId: string, plainText?: string, cursor?: string, priorAnnouncementIds = [campaignId]) {
+    // Progress is durable server-side, never supplied by a caller after restart.
+    if (cursor !== undefined) throw new Error('Use durable manifest cursor');
     plainText ??= (await this.content(campaignId)).plainText;
     if (!plainText.trim()) throw new Error('Explicit reviewed plain text required');
     const campaign = await this.db.campaign.findFirst({where: {id: campaignId, projectId: this.projectId}});
@@ -89,10 +92,13 @@ export class NativeNewsletterDelivery {
     // CampaignService reads validated runtime constants on import. Defer it until
     // after NativePlunkServer has loaded its private configuration.
     const {CampaignService} = await import('../services/CampaignService.js');
-    const page = await CampaignService.getRecipientsCursor(this.projectId, campaign, 100, cursor);
-    for (const contact of page.contacts) {
-      const data = {email: contact.email, data: contact.data ?? {},
-        ...((contact.data as Record<string, unknown> | null) ?? {})};
+    const audience = new NativeAudience(this.db);
+    await audience.freeze(ledgerId, version,
+      await CampaignService.buildRecipientWhereAsync(this.projectId, campaign), priorAnnouncementIds);
+    const contacts = await audience.page(ledgerId);
+    for (const contact of contacts) {
+      const data = {email: contact.email, data: contact.personalization,
+        ...contact.personalization};
       await this.ledger.enqueue(ledgerId, version, contact.email, {
         from: campaign.fromName ? `${campaign.fromName} <${campaign.from}>` : campaign.from,
         reply_to: campaign.replyTo ?? campaign.from,
@@ -100,7 +106,9 @@ export class NativeNewsletterDelivery {
         text: renderTemplate(plainText, data),
       });
     }
-    return {prepared: page.contacts.length, nextCursor: page.nextCursor, hasMore: page.hasMore};
+    const last = contacts[contacts.length - 1]?.contact_id;
+    if (last) await audience.advance(ledgerId, last);
+    return {prepared: contacts.length, nextCursor: last, hasMore: (await audience.page(ledgerId)).length > 0};
   }
   async attempt(deliveryId: string) {
     if (!await this.ledger.belongsToProject(deliveryId, this.projectId)) throw new Error('Native delivery unavailable');

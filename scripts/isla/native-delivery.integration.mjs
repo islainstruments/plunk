@@ -50,12 +50,44 @@ try{
  await adapter.pause(campaign.id);
  // Native audience preparation is internal/paused; no route or provider release.
  const page=await adapter.prepareCampaignPage(campaign.id,'Frozen explicit text');
- assert.equal(page.prepared,1);assert.equal(page.hasMore,false);
+ assert.equal(page.prepared,0);assert.equal(page.hasMore,false);
  await adapter.prepareCampaignPage(campaign.id,'Frozen explicit text');
  const prepared=await pool.query("SELECT id FROM isla_newsletter.deliveries WHERE campaign_id=$1",['customer-'+campaign.id]);
- assert.equal(prepared.rowCount,1);
- await ledger.setCampaignState('customer-'+campaign.id,'running');
- assert.equal(await adapter.attempt(prepared.rows[0].id),'customer-dispatch-disabled');assert.equal(calls,1);
+ assert.equal(prepared.rowCount,0); // suppressed original is excluded by frozen manifest
+ // A fresh unsuppressed contact remains customer-purpose held even if running.
+ const eligible='eligible-native@example.invalid';
+ await prisma.contact.create({data:{projectId:project.id,email:eligible,subscribed:true}});
+ await ledger.importContact({email:eligible,review:false,consentEvidence:'synthetic',provenance:[{sourceCategory:'fixture',sourceSystem:'fixture',sourceRecordId:'eligible',observedAt:new Date().toISOString()}]});
+ const heldCampaign=await prisma.campaign.create({data:{projectId:project.id,name:'Held snapshot',subject:'Fixture',body:'<p>Fixture</p>',from:'newsletter@islaelectronics.com',type:'MARKETING',audienceType:'ALL',status:'DRAFT'}});
+ await adapter.prepareCampaignPage(heldCampaign.id,'Fixture text');
+ const held=(await pool.query('SELECT id FROM isla_newsletter.deliveries WHERE campaign_id=$1',['customer-'+heldCampaign.id])).rows[0];
+ await ledger.setCampaignState('customer-'+heldCampaign.id,'running');
+ assert.equal(await adapter.attempt(held.id),'customer-dispatch-disabled');assert.equal(calls,1);
+ // Freeze >1 page, preserving membership/personalization and exclusions on restart.
+ for(let i=0;i<102;i++){
+  const email=`snapshot-${String(i).padStart(3,'0')}@example.invalid`;
+  await prisma.contact.create({data:{id:`snapshot-${String(i).padStart(3,'0')}`,projectId:project.id,email,subscribed:true,data:{firstName:'Frozen'}}});
+  await ledger.importContact({email,review:false,consentEvidence:'synthetic',priorSends:i===0?[{campaignId:'prior-announcement',reference:'uncertain',state:'uncertain'}]:[],provenance:[{sourceCategory:'fixture',sourceSystem:'fixture',sourceRecordId:email,observedAt:new Date().toISOString()}]});
+ }
+ const snapshot=await prisma.campaign.create({data:{projectId:project.id,name:'Frozen snapshot',subject:'Hello {{firstName}}',body:'<p>{{firstName}}</p>',from:'newsletter@islaelectronics.com',type:'MARKETING',audienceType:'ALL',status:'DRAFT'}});
+ const first=await adapter.prepareCampaignPage(snapshot.id,'Text {{firstName}}',undefined,['prior-announcement']);
+ assert.equal(first.prepared,100);assert.equal(first.hasMore,true);
+ await prisma.contact.updateMany({where:{projectId:project.id},data:{data:{firstName:'Edited'}}});
+ await prisma.contact.create({data:{projectId:project.id,email:'late-snapshot@example.invalid',subscribed:true}});
+ // Simulate crash after page enqueues but before cursor commit. Reprocessing is idempotent.
+ await pool.query('UPDATE isla_newsletter.audience_manifests SET prepared_cursor=NULL WHERE campaign_id=$1',['customer-'+snapshot.id]);
+ const restarted=new NativeNewsletterDelivery(prisma,ledger,project.id);
+ assert.equal((await restarted.prepareCampaignPage(snapshot.id,'Text {{firstName}}',undefined,['prior-announcement'])).prepared,100);
+ const second=await restarted.prepareCampaignPage(snapshot.id,'Text {{firstName}}',undefined,['prior-announcement']);
+ assert.equal(second.prepared,2);assert.equal(second.hasMore,false);
+ const deliveries=await pool.query('SELECT recipient,payload FROM isla_newsletter.deliveries WHERE campaign_id=$1',['customer-'+snapshot.id]);
+ assert.equal(deliveries.rowCount,102);
+ assert.ok(deliveries.rows.every(r=>!['snapshot-000@example.invalid','late-snapshot@example.invalid',recipient].includes(r.recipient)));
+ assert.ok(deliveries.rows.filter(r=>r.recipient.startsWith('snapshot-')).every(r=>r.payload.subject==='Hello Frozen'));
+ await assert.rejects(()=>adapter.prepareCampaignPage(snapshot.id,'Text {{firstName}}',undefined,['changed-policy']),/frozen/);
+ await assert.rejects(()=>pool.query('UPDATE isla_newsletter.audience_members SET email=$1 WHERE campaign_id=$2',['changed@example.invalid','customer-'+snapshot.id]),/immutable/);
+ const manifest=(await adapter.analytics(snapshot.id)).manifest;
+ assert.equal(manifest.selected,104);assert.equal(manifest.excluded,2);assert.equal(manifest.remaining,0);
  await assert.rejects(()=>adapter.prepareCampaignPage(campaign.id,'Edited frozen text'),/frozen/);
  const other=new NativeNewsletterDelivery(prisma,ledger,'another-project');
  await assert.rejects(()=>other.attempt(id),/unavailable/);

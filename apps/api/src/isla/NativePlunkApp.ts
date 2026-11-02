@@ -83,6 +83,10 @@ export function createNativePlunkApp(options: NativePlunkOptions) {
         if (typeof req.body?.plainText !== 'string' || !Number.isInteger(req.body?.revision)) return res.sendStatus(400);
         try {res.json(await options.delivery.saveContent(req.params.id, req.body.plainText, req.body.revision));} catch (error) {next(error);}
       });
+      this.app.get('/contacts/:id/marketing-status', async (req, res, next) => {
+        if (!options.contactImport) return res.sendStatus(503);
+        try {res.json(await options.contactImport.marketingStatus(req.params.id));} catch (error) {next(error);}
+      });
       this.addControllers(options.controllers);
       this.app.use((_req, res) => res.status(404).json({error: {message: 'Unknown native Plunk route'}}));
       this.app.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => {
