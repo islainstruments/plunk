@@ -1,6 +1,31 @@
 -- ISLA modifications to Plunk, licensed AGPL-3.0; additive commissioning schema.
 -- Apply only to an explicitly selected newsletter database. Never run on startup.
 CREATE SCHEMA IF NOT EXISTS isla_newsletter;
+-- Draft editing has no contact/campaign/delivery relationship or dispatch trigger.
+CREATE TABLE IF NOT EXISTS isla_newsletter.drafts (
+  id text PRIMARY KEY,
+  revision integer NOT NULL DEFAULT 1 CHECK (revision > 0),
+  content jsonb NOT NULL,
+  updated_by text NOT NULL,
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS isla_newsletter.draft_revisions (
+  draft_id text NOT NULL REFERENCES isla_newsletter.drafts(id),
+  revision integer NOT NULL,
+  content jsonb NOT NULL,
+  saved_by text NOT NULL,
+  saved_at timestamptz NOT NULL,
+  PRIMARY KEY(draft_id,revision)
+);
+CREATE OR REPLACE FUNCTION isla_newsletter.record_draft_revision() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  INSERT INTO isla_newsletter.draft_revisions(draft_id,revision,content,saved_by,saved_at)
+  VALUES(NEW.id,NEW.revision,NEW.content,NEW.updated_by,NEW.updated_at);
+  RETURN NEW;
+END $$;
+DROP TRIGGER IF EXISTS draft_revision ON isla_newsletter.drafts;
+CREATE TRIGGER draft_revision AFTER INSERT OR UPDATE ON isla_newsletter.drafts
+FOR EACH ROW EXECUTE FUNCTION isla_newsletter.record_draft_revision();
 CREATE TABLE IF NOT EXISTS isla_newsletter.contacts (
   email text PRIMARY KEY CHECK (email = lower(trim(email))),
   provenance jsonb NOT NULL,
@@ -75,6 +100,8 @@ REVOKE ALL ON SCHEMA isla_newsletter FROM PUBLIC;
 REVOKE ALL ON ALL TABLES IN SCHEMA isla_newsletter FROM PUBLIC;
 -- Fail closed even where a hosted database has permissive default privileges.
 ALTER TABLE isla_newsletter.contacts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE isla_newsletter.drafts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE isla_newsletter.draft_revisions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE isla_newsletter.suppressions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE isla_newsletter.campaigns ENABLE ROW LEVEL SECURITY;
 ALTER TABLE isla_newsletter.deliveries ENABLE ROW LEVEL SECURITY;

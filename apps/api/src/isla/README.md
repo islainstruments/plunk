@@ -22,6 +22,10 @@ users. This directory is an implementation checkpoint, **not a deployed system**
   dispatch/import routes.
 - Analytics separate acceptance from verified provider event facts, and distinguish
   total provider events from unique messages. Tracking remains uncommissioned.
+- Separate, default-off `createNewsletterDraftApp` composition: authenticated
+  draft create/read/edit/list and inert HTML/plain-text previews, with optimistic
+  concurrency and saved revision history. See [draft API and operations](DRAFT-API.md).
+  This is a real PostgreSQL-backed API slice, **not a deployed staff editor**.
 
 `NewsletterRouter` must be deliberately mounted **before JSON body parsing** so
 webhook verification receives original bytes. It is not a security wrapper for
@@ -43,7 +47,11 @@ not read `DATABASE_URL` or production credentials. Use database
 pg_isready -h "$TMPDIR" -p 55439
 createdb -h "$TMPDIR" -p 55439 isla_newsletter_fixture
 corepack yarn tsc -p tsconfig.isla.json
+corepack yarn tsc -p tsconfig.isla.tests.json
+corepack yarn tsc -p tsconfig.isla.build.json
 corepack yarn vitest run --config vitest.isla.config.ts
+# From apps/api, lint the actual commissioning files:
+../../node_modules/.bin/eslint src/isla
 ```
 
 The suite uses `.invalid` fixture addresses, fixture signing keys and injected
@@ -55,7 +63,9 @@ database by the test harness. Never point this harness at production.
 
 ## Integration and operational gates still open
 
-This library is not yet connected to the Plunk editor/API/queue. The schema SQL
+The draft composition deliberately does not connect to upstream Plunk's
+editor/API/queue or to the delivery ledger. It has no provider configuration and
+cannot enqueue or send. The schema SQL
 is not an approved production migration and must never auto-apply on startup.
 Use a direct/session PostgreSQL connection: session advisory locks are incompatible
 with transaction-pooling connections. Select scoped server-role grants/RLS
@@ -68,7 +78,11 @@ HTTPS/ingress, process supervision, health checks, asset storage, account-wide
 quota coordination and live tracking configuration remain uncommissioned.
 No production Resend credential is needed for these tests.
 
-Before activation, exercise consistent backup/isolated restore and rollback.
+The synthetic suite exercises consistent pg_dump/isolated pg_restore and verifies
+exact table snapshots, immutable deliveries, draft history, suppression and
+disabled restored dispatch. It deletes its temporary restore database/archive.
+This does not establish production backup retention, off-host recovery or an
+image rollback. Before activation, commission those operational gates separately.
 Preserve the delivery ledger, suppression events and provider event facts across
 rollbacks. Never overwrite a live ledger with an older backup then resume sends.
 Uncertain attempts beyond the retry window require provider/manual reconciliation,

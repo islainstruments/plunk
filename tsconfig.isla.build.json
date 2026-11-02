@@ -1,0 +1,7 @@
+{
+  "extends": "./tsconfig.isla.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "outDir": "apps/api/dist/isla"
+  }
+}
