@@ -43,6 +43,38 @@ beforeEach(async () => {
 afterAll(async () => { vi.unstubAllGlobals(); await pool.end(); });
 
 describe('authenticated draft-only HTTP composition (real isolated PostgreSQL)', () => {
+  it('gates dedicated editor and assets with the same live staff boundary and default-off flag', async () => {
+    for (const path of ['/staff/newsletters', '/staff/newsletters/', '/staff/newsletters/editor.js', '/staff/newsletters/editor.css']) {
+      expect((await request(app()).get(path)).status).toBe(401);
+      expect((await request(app()).get(path).set('Cookie', cookie('inactive-draft'))).status).toBe(401);
+      expect((await request(app(false)).get(path).set('Cookie', cookie())).status).toBe(404);
+      const result = await request(app()).get(path).set('Cookie', cookie('viewer-draft'));
+      expect(result.status).toBe(200);
+      expect(result.headers['cache-control']).toBe('private, no-store');
+    }
+  });
+  it('serves a dedicated CSP-protected editor with source access, not the upstream root dashboard', async () => {
+    const page = await request(app()).get('/staff/newsletters').set('Cookie', cookie());
+    expect(page.text).toContain('data-role="admin"');
+    expect(page.text).toContain('All sending and customer dispatch disabled');
+    expect(page.text).toContain('Complete corresponding source and build instructions');
+    expect(page.text).toContain('src="/staff/newsletters/editor.js"');
+    expect(page.text).toContain('sandbox referrerpolicy="no-referrer"');
+    expect(page.headers['content-security-policy']).toContain("script-src 'self'");
+    expect(page.headers['content-security-policy']).not.toContain('unsafe-inline');
+    const viewer = await request(app()).get('/staff/newsletters').set('Cookie', cookie('viewer-draft'));
+    expect(viewer.text).toContain('data-role="viewer"');
+    for (const path of ['/', '/projects', '/auth/login']) expect((await request(app()).get(path)).status).toBe(404);
+  });
+  it('never interpolates stored draft source or subjects into the editor document', async () => {
+    await store.create({...content, subject: '<script>window.injected=1</script>', html: '<script>window.injected=2</script>'}, 'fixture');
+    const page = await request(app()).get('/staff/newsletters').set('Cookie', cookie());
+    expect(page.text).not.toContain('window.injected');
+    const script = await request(app()).get('/staff/newsletters/editor.js').set('Cookie', cookie());
+    expect(script.headers['content-type']).toContain('application/javascript');
+    expect(script.text).not.toContain('innerHTML');
+    expect(script.text).toContain('textContent');
+  });
   it('is default-off and exposes only non-sensitive liveness without authentication', async () => {
     const disabled = createNewsletterDraftApp({websiteOrigin: origin, staffSecret: secret, staffDb: pool, newsletterDb: pool});
     expect((await save(disabled).send(content)).status).toBe(404);
@@ -102,6 +134,18 @@ describe('authenticated draft-only HTTP composition (real isolated PostgreSQL)',
     expect(results.map(r => r.status).sort()).toEqual([200, 409]);
     expect((await store.get(draft.id))!.revision).toBe(2);
     expect((await pool.query('SELECT count(*)::int AS n FROM isla_newsletter.draft_revisions')).rows[0].n).toBe(2);
+  });
+  it('pins preview HTML and text to an audited saved revision even after later edits', async () => {
+    const draft = await store.create(content, 'fixture');
+    await store.update(draft.id, 1, {...content, html: '<p>New saved HTML</p>', text: 'New independent text'}, 'fixture');
+    const path = `${base}/${draft.id}/preview`;
+    const old = await request(app()).get(path + '?revision=1').set('Cookie', cookie('viewer-draft'));
+    expect(old.text).toContain('<p>Hello</p>');
+    expect(old.text).not.toContain('New saved HTML');
+    expect((await request(app()).get(path + '?revision=1&format=text').set('Cookie', cookie())).text).toBe(content.text);
+    expect((await request(app()).get(path + '?revision=2').set('Cookie', cookie())).text).toContain('New saved HTML');
+    expect((await request(app()).get(path + '?revision=3').set('Cookie', cookie())).status).toBe(404);
+    for (const value of ['0', '-1', 'abc', '2147483648']) expect((await request(app()).get(path).query({revision: value}).set('Cookie', cookie())).status).toBe(400);
   });
   it('rejects dispatch fields, empty text, header injection, malformed JSON, oversized bodies and invalid IDs', async () => {
     for (const bad of [{...content, to: ['synthetic@example.invalid']}, {...content, from: 'synthetic@example.invalid'}, {...content, text: ' '}, {...content, subject: 'x\r\nBcc: x'}])

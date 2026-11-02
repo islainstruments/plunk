@@ -23,9 +23,11 @@ users. This directory is an implementation checkpoint, **not a deployed system**
 - Analytics separate acceptance from verified provider event facts, and distinguish
   total provider events from unique messages. Tracking remains uncommissioned.
 - Separate, default-off `createNewsletterDraftApp` composition: authenticated
-  draft create/read/edit/list and inert HTML/plain-text previews, with optimistic
-  concurrency and saved revision history. See [draft API and operations](DRAFT-API.md).
-  This is a real PostgreSQL-backed API slice, **not a deployed staff editor**.
+  same-origin editor at `/staff/newsletters`, draft create/read/edit/list,
+  independent HTML/plain text, inert revision-pinned previews, optimistic
+  concurrency/conflict recovery and saved revision history. See [editor and real
+  browser commissioning](EDITOR.md), and [draft API and operations](DRAFT-API.md).
+  This is a working PostgreSQL-backed browser slice, **not a deployed staff editor**.
 
 `NewsletterRouter` must be deliberately mounted **before JSON body parsing** so
 webhook verification receives original bytes. It is not a security wrapper for
@@ -73,7 +75,7 @@ policies separately; no anonymous or browser access is intended.
 
 The injected `eligibility` callback must check canonical marketing state and fail
 closed; a test callback returning true is not a production consent integration.
-Website/Supabase synchronization, initial contact reconciliation, editor integration,
+Website/Supabase synchronization, initial contact reconciliation, live website integration,
 HTTPS/ingress, process supervision, health checks, asset storage, account-wide
 quota coordination and live tracking configuration remain uncommissioned.
 No production Resend credential is needed for these tests.

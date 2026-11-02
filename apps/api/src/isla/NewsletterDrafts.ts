@@ -43,6 +43,14 @@ export class NewsletterDrafts {
     )).rows;
   }
 
+  async getRevision(id: string, revision: number): Promise<SavedDraft | null> {
+    const result = await this.pool.query<SavedDraft>(
+      'SELECT draft_id AS id,revision,content FROM isla_newsletter.draft_revisions WHERE draft_id=$1 AND revision=$2',
+      [id, revision],
+    );
+    return result.rows[0] ?? null;
+  }
+
   async update(id: string, revision: number, input: DraftContent, actor: string): Promise<SavedDraft | null> {
     const content = draftContent.parse(input);
     // Compare-and-swap prevents simultaneous editors from losing a saved change.

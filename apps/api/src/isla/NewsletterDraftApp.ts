@@ -6,6 +6,7 @@ import sanitizeHtml from 'sanitize-html';
 import {z, ZodError} from 'zod';
 
 import {NewsletterDrafts, draftContent} from './NewsletterDrafts.js';
+import {editorPolicy, editorStyles, newsletterEditorPage, newsletterEditorScript} from './NewsletterEditor.js';
 import {websiteStaffLookup} from './StaffBoundary.js';
 
 export interface DraftAppOptions {
@@ -19,6 +20,7 @@ export interface DraftAppOptions {
 const id = z.string().uuid();
 const base = '/staff/newsletters/api/drafts';
 const edit = z.object({revision: z.number().int().positive().max(2147483646), content: draftContent}).strict();
+const previewRevision = z.string().regex(/^[1-9][0-9]{0,9}$/).transform(Number).pipe(z.number().int().max(2147483647));
 
 /** A separate Express app, NOT middleware that makes upstream Plunk safe to expose. */
 export function createNewsletterDraftApp(options: DraftAppOptions) {
@@ -53,6 +55,15 @@ export function createNewsletterDraftApp(options: DraftAppOptions) {
       res.locals.staff = user;
       next();
     });
+    app.get(['/staff/newsletters', '/staff/newsletters/'], (_req, res) => {
+      res.set('Content-Security-Policy', editorPolicy).type('html').send(newsletterEditorPage(res.locals.staff));
+    });
+    app.get('/staff/newsletters/editor.js', (_req, res) => {
+      res.type('application/javascript').send(newsletterEditorScript());
+    });
+    app.get('/staff/newsletters/editor.css', (_req, res) => {
+      res.type('text/css').send(editorStyles);
+    });
     app.get('/staff/newsletters/api/ready', async (_req, res) => {
       // No automatic migrations; readiness requires both draft tables and staff DB.
       await options.newsletterDb.query('SELECT id FROM isla_newsletter.drafts LIMIT 0');
@@ -85,7 +96,9 @@ export function createNewsletterDraftApp(options: DraftAppOptions) {
       res.json(saved);
     });
     app.get(`${base}/:id/preview`, async (req, res) => {
-      const saved = await drafts.get(id.parse(req.params.id));
+      const draftId = id.parse(req.params.id);
+      const saved = req.query.revision === undefined ? await drafts.get(draftId) :
+        await drafts.getRevision(draftId, previewRevision.parse(req.query.revision));
       if (!saved) { res.sendStatus(404); return; }
       if (req.query.format === 'text') { res.type('text/plain').send(saved.content.text); return; }
       if (req.query.format !== undefined && req.query.format !== 'html') { res.sendStatus(400); return; }

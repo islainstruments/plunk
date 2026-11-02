@@ -2,8 +2,9 @@
 
 ISLA modifications to Plunk, AGPL-3.0. Corresponding source:
 https://github.com/islainstruments/plunk/tree/isla/resend-staff
-Preserve LICENSE and these build instructions. Responses link to source; the eventual
-staff editor must display a prominent corresponding-source link and deployed revision.
+Preserve LICENSE and these build instructions. Responses link to source; the
+dedicated staff editor displays a prominent corresponding-source link. A future
+production release must also display its deployed revision. See [editor](EDITOR.md).
 
 ## Implemented boundary
 
@@ -35,9 +36,13 @@ Database owners can alter data and must not be used as production application us
 ## HTTP contract
 
 All staff paths are relative to the existing website origin, not a new hostname.
-No live ingress or browser editor is installed by this implementation.
+No live ingress is installed. A dedicated authenticated browser editor is now
+implemented and browser-tested locally; this is not a production deployment.
 
 - GET /health/live: unauthenticated, process liveness only, `sending:false`.
+- GET /staff/newsletters: active staff, dedicated HTML editor. Its editor.js and
+  editor.css assets use the same staff boundary. The document uses self-only
+  scripts/styles/connections/frames, no inline script or untrusted HTML injection.
 - GET /staff/newsletters/api/ready: active staff only; confirms draft/history
   tables are queryable plus fresh staff lookup; no provider/delivery readiness claim.
 - POST /staff/newsletters/api/drafts: admin, exact configured Origin required.
@@ -53,7 +58,10 @@ No live ingress or browser editor is installed by this implementation.
   Atomic compare-and-swap returns the next revision. A stale/concurrent edit
   returns 409; reload and reconcile, never overwrite silently. Missing ID is 404.
 - GET /staff/newsletters/api/drafts/:id/preview: active staff; sanitized inert
-  HTML. `?format=text` serves original plain text as text/plain. Remote image
+  HTML. Optional `?revision=N` pins the preview to a saved audited revision;
+  unknown revision is 404, invalid revision is 400. The editor pins its HTML
+  iframe to match the independently fetched saved text. `?format=text` serves
+  original plain text as text/plain. Remote image
   URLs and alt text remain in saved content/preview markup, but sandbox/default-src
   CSP blocks image/tracking requests, scripts, navigation and forms. This is not
   an email-client visual rendering or uploaded-asset acceptance test.
@@ -133,15 +141,16 @@ or authorize administrative APIs. Upstream API startup imports SES and queues;
 the unified worker starts email/campaign/domain processors. Neither is started
 or modified for this non-sending slice.
 
-A same-origin isolated staff editor is feasible in principle without another
-hostname, but requires a dedicated staff page/provider boundary, deliberate
-base-path/assets/network handling, server-side authorization, and browser/build
-verification using package-local Next docs. No Next code was changed here.
-No public stub UI is installed. The agreed /staff/newsletters website entry page
-itself is still not implemented or deployed; this milestone supplies its draft API.
+A dedicated same-origin staff editor is implemented in NewsletterEditor.ts,
+served by this isolated Express composition at /staff/newsletters without
+another hostname. It uses the draft API, not upstream Plunk project providers,
+contacts, uploads or auth. It has been exercised against emitted JavaScript in
+real Chromium, including conflicts, roles and independent text. No Next code
+was changed. This is a working local editor, not a static stub or deployed app.
+See EDITOR.md for workflow, reproducible browser tests and precise limitations.
 
 Still required: authoritative live website session compatibility and least-privilege
-DB integration; actual staff editor plus browser/asset tests; production schema
+DB integration; production schema
 review, scoped supervision, HTTPS routing and source-revision display; backup
 retention/off-host recovery and image rollback; canonical eligibility/suppression
 sync; account-wide provider throttling and signed-webhook commissioning; approved
