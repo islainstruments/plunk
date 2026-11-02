@@ -26,6 +26,14 @@ END $$;
 DROP TRIGGER IF EXISTS draft_revision ON isla_newsletter.drafts;
 CREATE TRIGGER draft_revision AFTER INSERT OR UPDATE ON isla_newsletter.drafts
 FOR EACH ROW EXECUTE FUNCTION isla_newsletter.record_draft_revision();
+-- Native campaign plain text is separate from HTML, never regenerated on save.
+CREATE TABLE IF NOT EXISTS isla_newsletter.native_content (
+  campaign_id text PRIMARY KEY,
+  project_id text NOT NULL,
+  plain_text text NOT NULL,
+  revision integer NOT NULL DEFAULT 1,
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
 CREATE TABLE IF NOT EXISTS isla_newsletter.contacts (
   email text PRIMARY KEY CHECK (email = lower(trim(email))),
   provenance jsonb NOT NULL,
@@ -44,12 +52,25 @@ CREATE TABLE IF NOT EXISTS isla_newsletter.suppressions (
   PRIMARY KEY (email, reason, source, source_event_id)
 );
 CREATE INDEX IF NOT EXISTS suppressions_email ON isla_newsletter.suppressions(email);
+-- Durable outbox acknowledgement, never suppression deletion. A failed remote
+-- write leaves the event pending; replay after a remote commit is idempotent.
+CREATE TABLE IF NOT EXISTS isla_newsletter.suppression_exports (
+  email text NOT NULL,
+  reason text NOT NULL,
+  source text NOT NULL,
+  source_event_id text NOT NULL,
+  exported_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY(email,reason,source,source_event_id),
+  FOREIGN KEY(email,reason,source,source_event_id)
+    REFERENCES isla_newsletter.suppressions(email,reason,source,source_event_id)
+);
 CREATE TABLE IF NOT EXISTS isla_newsletter.campaigns (
   id text PRIMARY KEY,
   state text NOT NULL DEFAULT 'draft' CHECK (state IN ('draft','paused','running','complete')),
   purpose text NOT NULL CHECK (purpose IN ('test','customer')),
   created_at timestamptz NOT NULL DEFAULT now()
 );
+ALTER TABLE isla_newsletter.campaigns ADD COLUMN IF NOT EXISTS content_version text;
 CREATE TABLE IF NOT EXISTS isla_newsletter.deliveries (
   id text PRIMARY KEY,
   campaign_id text NOT NULL REFERENCES isla_newsletter.campaigns(id),
@@ -100,9 +121,11 @@ REVOKE ALL ON SCHEMA isla_newsletter FROM PUBLIC;
 REVOKE ALL ON ALL TABLES IN SCHEMA isla_newsletter FROM PUBLIC;
 -- Fail closed even where a hosted database has permissive default privileges.
 ALTER TABLE isla_newsletter.contacts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE isla_newsletter.native_content ENABLE ROW LEVEL SECURITY;
 ALTER TABLE isla_newsletter.drafts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE isla_newsletter.draft_revisions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE isla_newsletter.suppressions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE isla_newsletter.suppression_exports ENABLE ROW LEVEL SECURITY;
 ALTER TABLE isla_newsletter.campaigns ENABLE ROW LEVEL SECURITY;
 ALTER TABLE isla_newsletter.deliveries ENABLE ROW LEVEL SECURITY;
 ALTER TABLE isla_newsletter.provider_events ENABLE ROW LEVEL SECURITY;

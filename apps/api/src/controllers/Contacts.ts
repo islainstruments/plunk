@@ -167,6 +167,13 @@ export class Contacts {
     const auth = res.locals.auth;
     const {email, data, subscribed} = req.body;
 
+    // ISLA: retain the native route, authentication, limiter and response shape;
+    // replace only the marketing import persistence policy in the staff host.
+    if (res.locals.nativeContactImport) {
+      const result = await res.locals.nativeContactImport.upsert(req.body);
+      return res.status(result._meta.isNew ? 201 : 200).json(result);
+    }
+
     if (!email) {
       return res.status(400).json({error: 'Email is required'});
     }

@@ -18,6 +18,11 @@ export function Loader({message, showLogo = true}: LoaderProps) {
   }, []);
 
   const handleClearCache = () => {
+    if (process.env.NEXT_PUBLIC_ISLA_STAFF === 'true') {
+      // This embedded app must not erase the parent website session.
+      window.location.reload();
+      return;
+    }
     document.cookie.split(';').forEach(c => {
       document.cookie = c.replace(/^ +/, '').replace(/=.*/, '=;expires=' + new Date().toUTCString() + ';path=/');
     });
@@ -30,7 +35,7 @@ export function Loader({message, showLogo = true}: LoaderProps) {
     <div className="h-screen flex items-center justify-center bg-white">
       <div className="flex flex-col items-center gap-6 animate-in fade-in duration-500">
         {showLogo && (
-          <Image src="/assets/logo.png" alt="Plunk" width={40} height={40} className="rounded-lg" priority />
+          <Image unoptimized src={`${router.basePath}/assets/logo.png`} alt="Plunk" width={40} height={40} className="rounded-lg" priority />
         )}
 
         <IconSpinner />

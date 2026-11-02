@@ -1487,7 +1487,7 @@ export class CampaignService {
   /**
    * Get recipients for a campaign using cursor-based pagination
    */
-  private static async getRecipientsCursor(
+  public static async getRecipientsCursor(
     projectId: string,
     campaign: Campaign,
     limit: number,
@@ -1573,7 +1573,7 @@ export class CampaignService {
       where: {id: segmentId},
     });
 
-    if (!segment) {
+    if (!segment || segment.projectId !== projectId) {
       throw new HttpException(404, 'Segment not found');
     }
 

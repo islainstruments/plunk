@@ -1,5 +1,8 @@
 # ISLA newsletter commissioning components
 
+Current native runtime and build/operations instructions: [scripts/isla/README.md](../../../../scripts/isla/README.md).
+The historical custom editor below is retained but is not the native application.
+
 ISLA modifications to Plunk, licensed under AGPL-3.0. Preserve the upstream
 LICENSE and make corresponding source/build instructions available to network
 users. This directory is an implementation checkpoint, **not a deployed system**.

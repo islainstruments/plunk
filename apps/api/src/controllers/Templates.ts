@@ -8,6 +8,7 @@ import {TemplateService} from '../services/TemplateService.js';
 import {CatchAsync} from '../utils/asyncHandler.js';
 import {parseListSort} from '../utils/listSort.js';
 import {assertValidTemplateSyntax} from '../utils/templateValidation.js';
+import {hasVerifiedStaffPlunk} from '../isla/StaffPlunkBoundary.js';
 
 @Controller('templates')
 export class Templates {
@@ -87,8 +88,8 @@ export class Templates {
 
     assertValidTemplateSyntax({subject, body});
 
-    // Verify domain ownership and verification
-    await DomainService.verifyEmailDomain(from, auth.projectId!);
+    // Isolated non-sending staff drafts do not commission a sender.
+    if (!hasVerifiedStaffPlunk(res)) await DomainService.verifyEmailDomain(from, auth.projectId!);
 
     const template = await TemplateService.create(auth.projectId!, {
       name,
@@ -123,7 +124,7 @@ export class Templates {
     assertValidTemplateSyntax({subject, body});
 
     // Verify domain ownership and verification if 'from' is being updated
-    if (from) {
+    if (from && !hasVerifiedStaffPlunk(res)) {
       await DomainService.verifyEmailDomain(from, auth.projectId!);
     }
 

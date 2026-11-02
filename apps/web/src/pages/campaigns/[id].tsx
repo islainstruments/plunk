@@ -36,6 +36,7 @@ import {CampaignAudienceType, CampaignStatus, TemplateType} from '@plunk/db';
 import {CampaignSchemas, detectUnsubscribeSignal} from '@plunk/shared';
 import {AnimatedNumber} from '../../components/AnimatedNumber';
 import {CampaignRecipientsSheet} from '../../components/CampaignRecipientsSheet';
+import {NewsletterDelivery} from '../../components/NewsletterDelivery';
 import {DashboardLayout} from '../../components/DashboardLayout';
 import {EmailSettings} from '../../components/EmailSettings';
 import {EmailEditor} from '../../components/EmailEditor';
@@ -208,7 +209,7 @@ export default function CampaignDetailsPage() {
 
   // Fetch project members for test email
   const {data: projectMembers} = useSWR<{data: Array<{userId: string; email: string; role: string}>}>(
-    id && campaign?.data.projectId ? `/projects/${campaign.data.projectId}/members` : null,
+    process.env.NEXT_PUBLIC_ISLA_STAFF !== 'true' && id && campaign?.data.projectId ? `/projects/${campaign.data.projectId}/members` : null,
     {revalidateOnFocus: false},
   );
 
@@ -521,6 +522,7 @@ export default function CampaignDetailsPage() {
     return (
       <DashboardLayout>
         <NextSeo title={campaign.data.name} />
+        {process.env.NEXT_PUBLIC_ISLA_STAFF === 'true' && <NewsletterDelivery campaignId={c.id} />}
         <form onSubmit={handleSave} className={`space-y-6 ${hasChanges ? 'pb-32' : ''}`}>
           {/* Header */}
           <div className="space-y-4">
@@ -576,7 +578,7 @@ export default function CampaignDetailsPage() {
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="w-72">
-                    <DropdownMenuItem onClick={() => setDialog({type: 'testEmail', sending: false})} className="py-3 cursor-pointer">
+                    <DropdownMenuItem disabled={process.env.NEXT_PUBLIC_ISLA_STAFF === 'true'} onClick={() => setDialog({type: 'testEmail', sending: false})} className="py-3 cursor-pointer">
                       <div className="flex items-start gap-3">
                         <TestTube className="h-4 w-4 mt-0.5 text-neutral-700" />
                         <div className="flex flex-col gap-0.5 flex-1">
@@ -587,7 +589,7 @@ export default function CampaignDetailsPage() {
                         </div>
                       </div>
                     </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => setDialog({type: 'send'})} className="py-3 cursor-pointer">
+                    <DropdownMenuItem disabled={process.env.NEXT_PUBLIC_ISLA_STAFF === 'true'} onClick={() => setDialog({type: 'send'})} className="py-3 cursor-pointer">
                       <div className="flex items-start gap-3">
                         <Send className="h-4 w-4 mt-0.5 text-neutral-700" />
                         <div className="flex flex-col gap-0.5 flex-1">
@@ -598,7 +600,7 @@ export default function CampaignDetailsPage() {
                         </div>
                       </div>
                     </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => setDialog({type: 'schedule'})} className="py-3 cursor-pointer">
+                    <DropdownMenuItem disabled={process.env.NEXT_PUBLIC_ISLA_STAFF === 'true'} onClick={() => setDialog({type: 'schedule'})} className="py-3 cursor-pointer">
                       <div className="flex items-start gap-3">
                         <Calendar className="h-4 w-4 mt-0.5 text-neutral-700" />
                         <div className="flex flex-col gap-0.5 flex-1">

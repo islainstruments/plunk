@@ -147,6 +147,18 @@ export class NewsletterLedger {
   async createCampaign(id: string, purpose: 'test' | 'customer'): Promise<void> {
     await this.pool.query('INSERT INTO isla_newsletter.campaigns(id,purpose) VALUES($1,$2)', [id, purpose]);
   }
+  async freezeCampaign(id: string, version: string): Promise<void> {
+    await this.locked('campaign:' + id, async db => {
+      await db.query("INSERT INTO isla_newsletter.campaigns(id,purpose,content_version) VALUES($1,'customer',$2) ON CONFLICT DO NOTHING", [id, version]);
+      const row = (await db.query('SELECT content_version,purpose FROM isla_newsletter.campaigns WHERE id=$1', [id])).rows[0];
+      if (row.content_version !== version || row.purpose !== 'customer') throw new Error('Prepared native campaign revision is frozen');
+    });
+  }
+  async belongsToProject(deliveryId: string, projectId: string): Promise<boolean> {
+    const result = await this.pool.query(`SELECT 1 FROM isla_newsletter.deliveries d JOIN public.campaigns c
+      ON d.campaign_id IN ('staff-test-' || c.id, 'customer-' || c.id) WHERE d.id=$1 AND c."projectId"=$2`, [deliveryId, projectId]);
+    return !!result.rowCount;
+  }
   async setCampaignState(id: string, state: 'draft' | 'paused' | 'running'): Promise<void> {
     await this.locked('campaign:' + id, async db => {
       const result = await db.query('UPDATE isla_newsletter.campaigns SET state=$2 WHERE id=$1', [id, state]);

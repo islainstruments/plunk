@@ -45,10 +45,13 @@ export const S3_PREFIX = validateEnv('S3_PREFIX', '')
   .replace(/^\/+|\/+$/g, '');
 export const S3_ENABLED = S3_ACCESS_KEY_ID !== '' && S3_ACCESS_KEY_SECRET !== '';
 
-// AWS SES (required for email sending)
-export const AWS_SES_REGION = validateEnv('AWS_SES_REGION');
-export const AWS_SES_ACCESS_KEY_ID = validateEnv('AWS_SES_ACCESS_KEY_ID');
-export const AWS_SES_SECRET_ACCESS_KEY = validateEnv('AWS_SES_SECRET_ACCESS_KEY');
+// Native staff commissioning cannot invoke legacy delivery/identity APIs.
+export const EMAIL_TRANSPORT = validateEnv<string>('EMAIL_TRANSPORT', 'ses');
+if (!['ses', 'held'].includes(EMAIL_TRANSPORT)) throw new Error('Unsupported email transport');
+// No actual credentials are provisioned for the held native controller host.
+export const AWS_SES_REGION = EMAIL_TRANSPORT === 'held' ? 'us-east-1' : validateEnv('AWS_SES_REGION');
+export const AWS_SES_ACCESS_KEY_ID = EMAIL_TRANSPORT === 'held' ? 'disabled' : validateEnv('AWS_SES_ACCESS_KEY_ID');
+export const AWS_SES_SECRET_ACCESS_KEY = EMAIL_TRANSPORT === 'held' ? 'disabled' : validateEnv('AWS_SES_SECRET_ACCESS_KEY');
 
 // Custom MAIL FROM subdomain used to construct `<subdomain>.<your-domain>`
 // when a domain is added. Defaults to `plunk`. Override when `plunk.<your-domain>`

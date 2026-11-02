@@ -6,6 +6,7 @@ import {
   AWS_SES_ACCESS_KEY_ID,
   AWS_SES_REGION,
   AWS_SES_SECRET_ACCESS_KEY,
+  EMAIL_TRANSPORT,
   MAIL_FROM_SUBDOMAIN,
   SES_CONFIGURATION_SET,
   SES_CONFIGURATION_SET_NO_TRACKING,
@@ -43,6 +44,14 @@ const sts = new STS({
 });
 
 let awsAccountId: Promise<string> | undefined;
+
+// Fail before serialization/network for every legacy SES/STS method, not just
+// raw send. Native staff mode has no SES quota, verification or tracking setup.
+if (EMAIL_TRANSPORT === 'held') {
+  const rejectHeld = () => async () => { throw new Error('Legacy email provider is held'); };
+  ses.middlewareStack.add(rejectHeld, {step: 'initialize', name: 'islaProviderHold'});
+  sts.middlewareStack.add(rejectHeld, {step: 'initialize', name: 'islaProviderHold'});
+}
 
 /**
  * The AWS account the SES credentials belong to. GetCallerIdentity needs no IAM

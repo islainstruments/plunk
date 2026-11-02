@@ -21,6 +21,8 @@ coverage
 
 # Build Outputs
 .next/
+.next-preserved-*/
+native-api-bundle/
 out/
 build
 dist

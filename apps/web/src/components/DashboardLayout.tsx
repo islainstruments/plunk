@@ -92,7 +92,7 @@ export function DashboardLayout({children}: DashboardLayoutProps) {
       {/* Logo */}
       <div className="h-16 flex items-center justify-between px-6 border-b border-neutral-200">
         <div className="flex items-center gap-2">
-          <Image src="/assets/logo.png" alt="Plunk" width={28} height={28} className="rounded" />
+          <Image unoptimized src={`${router.basePath}/assets/logo.png`} alt="Plunk" width={28} height={28} className="rounded" />
           <h1 className="text-xl font-bold text-neutral-900">Plunk</h1>
         </div>
         <button
@@ -103,6 +103,13 @@ export function DashboardLayout({children}: DashboardLayoutProps) {
           <span>K</span>
         </button>
       </div>
+
+      {process.env.NEXT_PUBLIC_ISLA_STAFF === 'true' && (
+        <p role="status" className="px-4 py-3 text-sm border-b border-neutral-200 bg-amber-50 text-amber-900">
+          Staff commissioning: imports and all sending are held. Campaigns remain drafts.
+          Opens and clicks can include privacy proxies and link scanners; they do not prove human reading.
+        </p>
+      )}
 
       {/* Project Switcher */}
       <div className="p-4 border-b border-neutral-200">
@@ -184,13 +191,13 @@ export function DashboardLayout({children}: DashboardLayoutProps) {
       {/* Settings & User Menu */}
       <div className="border-t border-neutral-200 p-3 space-y-1">
         <a
-          href={WIKI_URI}
+          href={process.env.NEXT_PUBLIC_ISLA_STAFF === 'true' ? 'https://github.com/islainstruments/plunk/tree/isla/native-staff-plunk' : WIKI_URI}
           target="_blank"
           rel="noopener noreferrer"
           className="flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-lg transition-colors text-neutral-600 hover:bg-neutral-50 hover:text-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
         >
           <BookOpen className="h-5 w-5" />
-          Documentation
+          {process.env.NEXT_PUBLIC_ISLA_STAFF === 'true' ? 'Source & build instructions (AGPL)' : 'Documentation'}
         </a>
 
         {config?.features.sponsor.enabled && (
@@ -289,7 +296,7 @@ export function DashboardLayout({children}: DashboardLayoutProps) {
             <Menu className="h-6 w-6 text-neutral-900" />
           </button>
           <div className="flex items-center gap-2 ml-4">
-            <Image src="/assets/logo.png" alt="Plunk" width={24} height={24} className="rounded" />
+            <Image unoptimized src={`${router.basePath}/assets/logo.png`} alt="Plunk" width={24} height={24} className="rounded" />
             <h1 className="text-lg font-bold text-neutral-900">Plunk</h1>
           </div>
         </div>
@@ -297,7 +304,7 @@ export function DashboardLayout({children}: DashboardLayoutProps) {
         {/* Page Content */}
         <main className="flex-1 overflow-y-auto">
           <div className="max-w-7xl mx-auto px-4 py-4 sm:px-6 sm:py-6 lg:px-8 lg:py-8">
-            <OnboardingBanner />
+            {process.env.NEXT_PUBLIC_ISLA_STAFF !== 'true' && <OnboardingBanner />}
             {children}
           </div>
         </main>

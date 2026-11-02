@@ -1,0 +1,70 @@
+// Real native Plunk campaign -> durable Resend ledger. Mock HTTP only; .invalid recipients.
+import assert from 'node:assert/strict';
+import pg from '../../node_modules/pg/lib/index.js';
+import fs from 'node:fs/promises';
+import {Webhook} from '../../node_modules/svix/dist/index.mjs';
+import {prisma} from '../../apps/api/dist/database/prisma.js';
+import {NewsletterLedger} from '../../apps/api/dist/isla/NewsletterLedger.js';
+import {NativeNewsletterDelivery} from '../../apps/api/dist/isla/NativeNewsletterDelivery.js';
+const pool=new pg.Pool({connectionString:process.env.DATABASE_URL});
+const secret='whsec_'+Buffer.from('synthetic-native-adapter-signing-secret').toString('base64');
+let calls=0;let payload;
+try{
+ // Prisma resets only its public schema. Reset the separate ledger schema too;
+ // otherwise a previous fixture's real suppression correctly skips this run.
+ assert.equal(new URL(process.env.DATABASE_URL).hostname,'127.0.0.1');
+ assert.equal(new URL(process.env.DATABASE_URL).port,'55473');
+ assert.equal(new URL(process.env.DATABASE_URL).pathname,'/plunk_native');
+ await pool.query('DROP SCHEMA IF EXISTS isla_newsletter CASCADE');
+ await pool.query(await fs.readFile('apps/api/src/isla/schema.sql','utf8'));
+ const project=await prisma.project.create({data:{name:'Synthetic adapter',public:'adapter-fixture-public',secret:'adapter-fixture-secret',tracking:'DISABLED'}});
+ const recipient='native-fixture@example.invalid';
+ const contact=await prisma.contact.create({data:{projectId:project.id,email:recipient,subscribed:true,data:{firstName:'Synthetic'}}});
+ const campaign=await prisma.campaign.create({data:{projectId:project.id,name:'Synthetic native campaign',subject:'Hello {{firstName}}',body:'<p>Hello {{firstName}}</p><img src="https://example.invalid/art.png" alt="Artwork">',from:'newsletter@islaelectronics.com',replyTo:'reply@islaelectronics.com',type:'MARKETING',audienceType:'ALL',status:'DRAFT'}});
+ const ledger=new NewsletterLedger(pool,{mode:'staff-test',apiKey:'fixture-not-real',designatedRecipients:[recipient],eligibility:async()=>true,publicOrigin:'https://staff.example.invalid',webhookSecret:secret,fetch:async(_url,options)=>{calls++;payload=JSON.parse(options.body);return new Response(JSON.stringify({id:'native-provider-fixture'}),{status:200})}});
+ await ledger.importContact({email:recipient,review:false,consentEvidence:'synthetic only',provenance:[{sourceCategory:'fixture',sourceSystem:'fixture',sourceRecordId:contact.id,observedAt:new Date().toISOString()}]});
+ const adapter=new NativeNewsletterDelivery(prisma,ledger,project.id);
+ assert.deepEqual(await adapter.content(campaign.id),{plainText:'',revision:0});
+ assert.equal((await adapter.saveContent(campaign.id,'Reviewed plain text for {{firstName}}.',0)).revision,1);
+ await assert.rejects(()=>adapter.saveContent(campaign.id,'Stale overwrite',0),/conflict/);
+ assert.equal((await adapter.content(campaign.id)).plainText,'Reviewed plain text for {{firstName}}.');
+ await assert.rejects(()=>adapter.prepareStaffTest(campaign.id,recipient,''));
+ const id=await adapter.prepareStaffTest(campaign.id,recipient);
+ assert.equal(await adapter.prepareStaffTest(campaign.id,recipient,'Reviewed plain text for {{firstName}}.'),id);
+ assert.equal(await adapter.attempt(id),'paused');
+ await adapter.resumeStaffTest(campaign.id);
+ assert.equal(await adapter.attempt(id),'accepted');assert.equal(calls,1);
+ assert.equal(await adapter.attempt(id),'accepted');assert.equal(calls,1);
+ assert.equal(payload.subject,'Hello Synthetic');assert.ok(payload.html.includes('<img'));assert.ok(payload.text.startsWith('Reviewed plain text for Synthetic.'));
+ assert.equal(payload.to.length,1);assert.ok(payload.headers['List-Unsubscribe-Post']);
+ const token=payload.headers['List-Unsubscribe'].match(/unsubscribe\/([A-Za-z0-9_-]+)/)[1];
+ await ledger.unsubscribe(token);
+ await ledger.importContact({email:recipient,review:false,consentEvidence:'reimport',provenance:[{sourceCategory:'fixture',sourceSystem:'fixture',sourceRecordId:contact.id,observedAt:new Date().toISOString()}]});
+ await prisma.campaign.update({where:{id:campaign.id},data:{subject:'New content'}});
+ const queued=await adapter.prepareStaffTest(campaign.id,recipient,'Reviewed plain text.');
+ assert.equal(await adapter.attempt(queued),'skipped');assert.equal(calls,1);
+ const raw=JSON.stringify({type:'email.complained',created_at:new Date().toISOString(),data:{email_id:'native-provider-fixture'}});const at=new Date();const event='native-event-fixture';const headers={'svix-id':event,'svix-timestamp':String(Math.floor(at.getTime()/1000)),'svix-signature':new Webhook(secret).sign(event,at,raw)};
+ assert.equal(await ledger.ingestWebhook(raw,headers),'recorded');assert.equal(await ledger.ingestWebhook(raw,headers),'duplicate');
+ const report=await adapter.analytics(campaign.id);assert.equal(report.accepted,0);assert.equal(report.scope,'customer');const analytics=report.staffTests;assert.equal(analytics.accepted,1);assert.equal(analytics.skipped,1);assert.equal(analytics.unsubscribed,1);
+ assert.deepEqual(analytics.providerEvents,[{event_type:'email.complained',total_events:1,unique_messages:1}]);
+ await adapter.pause(campaign.id);
+ // Native audience preparation is internal/paused; no route or provider release.
+ const page=await adapter.prepareCampaignPage(campaign.id,'Frozen explicit text');
+ assert.equal(page.prepared,1);assert.equal(page.hasMore,false);
+ await adapter.prepareCampaignPage(campaign.id,'Frozen explicit text');
+ const prepared=await pool.query("SELECT id FROM isla_newsletter.deliveries WHERE campaign_id=$1",['customer-'+campaign.id]);
+ assert.equal(prepared.rowCount,1);
+ await ledger.setCampaignState('customer-'+campaign.id,'running');
+ assert.equal(await adapter.attempt(prepared.rows[0].id),'customer-dispatch-disabled');assert.equal(calls,1);
+ await assert.rejects(()=>adapter.prepareCampaignPage(campaign.id,'Edited frozen text'),/frozen/);
+ const other=new NativeNewsletterDelivery(prisma,ledger,'another-project');
+ await assert.rejects(()=>other.attempt(id),/unavailable/);
+ console.log('PASS native audience preparation/restart dedup, frozen revision, customer dispatch hold, project-scoped delivery, separate customer/test analytics');
+ assert.equal((await prisma.campaign.findUnique({where:{id:campaign.id}})).status,'DRAFT');
+ console.log('PASS native campaign personalization + explicit plain text + private single recipient + durable dedup + pause/resume + unsubscribe + reimport suppression + signed replay-safe event + ledger analytics; synthetic HTTP only');
+}finally{
+ const queues=await import('../../apps/api/dist/services/QueueService.js');
+ await Promise.all(Object.entries(queues).filter(([name,value])=>name.endsWith('Queue')&&typeof value.close==='function').map(([,queue])=>queue.close()));
+ const {redis}=await import('../../apps/api/dist/database/redis.js');await redis.quit();
+ await prisma.$disconnect();await pool.end();
+}

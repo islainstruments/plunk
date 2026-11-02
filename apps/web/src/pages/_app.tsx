@@ -55,7 +55,11 @@ function AuthGuard({children}: {children: React.ReactNode}) {
   useEffect(() => {
     // If not loading, no user, and trying to access a protected route, redirect to login
     if (!isLoading && !user && !isPublicRoute) {
-      void router.push('/auth/login');
+      if (process.env.NEXT_PUBLIC_ISLA_STAFF === 'true') {
+        window.top!.location.href = '/staff/login';
+      } else {
+        void router.push('/auth/login');
+      }
     }
 
     // If user is logged in and trying to access login/signup, redirect to home
@@ -117,12 +121,12 @@ export default function WithProviders(props: AppProps) {
       >
         <DefaultSeo titleTemplate="%s | Plunk" defaultTitle="Plunk | Email Platform Dashboard" />
 
-        <Script
+        {process.env.NEXT_PUBLIC_ISLA_STAFF !== 'true' && <Script
           defer
           src="https://analytics.driaug.com/script.js"
           data-website-id="5880df93-9025-41ae-8e33-7c3da865f764"
           data-domains="next-app.useplunk.com"
-        />
+        />}
 
         <ActiveProjectProvider>
           <Root {...props} />

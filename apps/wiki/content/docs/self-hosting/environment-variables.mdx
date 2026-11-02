@@ -29,6 +29,19 @@ Set your subdomains here. The application automatically derives all internal and
 
 ## AWS SES
 
+ISLA native staff commissioning uses `EMAIL_TRANSPORT=held` (default `ses`).
+Held mode rejects every legacy SES/STS call before network access and does not
+require AWS credentials. It is not a commissioned Resend delivery transport.
+Use the dedicated native staff controller host, not the upstream API/worker entry
+points. No imports, scheduling, customer dispatch or test sends are enabled.
+
+`NEXT_PUBLIC_ISLA_STAFF=true` is a frontend build-time setting (default unset):
+it mounts the actual Plunk UI at `/staff/newsletters/plunk`, redirects expired
+staff sessions to `/staff/login`, removes upstream telemetry and displays the
+commissioning holds. Set `NEXT_PUBLIC_API_URI=/staff/newsletters/api` for
+the protected same-origin API. This UI flag is not authentication; deployment
+must protect the HTML, Next data, assets and API with website staff authorization.
+
 | Variable                            | Required | Description                                                                                                                                      | Example                                         |
 | ----------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------- |
 | `AWS_SES_REGION`                    | Yes      | AWS region where SES is configured.                                                                                                              | `us-east-1`                                     |

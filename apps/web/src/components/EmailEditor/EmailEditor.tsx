@@ -111,7 +111,7 @@ export function EmailEditor({value, onChange, placeholder, subject, from, replyT
   // available list (e.g. the segment changed). Otherwise the preview stays
   // stuck rendering a contact that's no longer selectable in the dropdown.
   useEffect(() => {
-    if (selectedContactId && !contacts.some(c => c.id === selectedContactId)) {
+    if (selectedContactId && selectedContactId !== '__content_preview__' && !contacts.some(c => c.id === selectedContactId)) {
       setSelectedContactId('');
     }
   }, [contacts, selectedContactId]);
@@ -329,7 +329,7 @@ export function EmailEditor({value, onChange, placeholder, subject, from, replyT
         const fullHtml = wrapEmailWithStyles(previewContent);
 
         iframeDoc.open();
-        iframeDoc.write(fullHtml);
+        iframeDoc.write('<meta http-equiv="Content-Security-Policy" content="default-src &#39;none&#39;; img-src https: data:; style-src &#39;unsafe-inline&#39;; base-uri &#39;none&#39;; form-action &#39;none&#39;">' + fullHtml);
         iframeDoc.close();
 
         // Auto-adjust iframe height to content. Reset to a small value first so
@@ -401,6 +401,9 @@ export function EmailEditor({value, onChange, placeholder, subject, from, replyT
               <SelectItem value="none">
                 <span className="text-neutral-500">No preview</span>
               </SelectItem>
+              {process.env.NEXT_PUBLIC_ISLA_STAFF === 'true' && (
+                <SelectItem value="__content_preview__">Content preview (no recipient)</SelectItem>
+              )}
               {contacts.map(contact => (
                 <SelectItem key={contact.id} value={contact.id}>
                   {contact.email}
