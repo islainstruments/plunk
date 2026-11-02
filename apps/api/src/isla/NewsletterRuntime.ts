@@ -30,8 +30,8 @@ export const staffDatabaseConfig = z.object({
   password: z.string().min(32),
   tlsServerName: z.string().regex(/^(?:[a-z0-9-]+\.)+supabase\.com$/),
   caFile: z.string().startsWith('/'),
-}).strict().refine(value => value.host === 'staff-db-proxy' ? value.port === 4196 :
-  value.port === 5432 && value.host === value.tlsServerName, 'Verified direct/session endpoint or isolated TLS proxy required');
+}).strict().refine(value => value.host === value.tlsServerName && (value.port === 5432 || value.port === 4196),
+  'Verified direct/session TLS hostname required, including fixed-destination proxy connections');
 export const databaseConfig = z.object({
   // Local Unix socket, loopback or isolated Docker alias only. No remote TLS downgrade.
   host: z.string().refine(value => value === 'newsletter-db' || value === '127.0.0.1' || value.startsWith('/')),

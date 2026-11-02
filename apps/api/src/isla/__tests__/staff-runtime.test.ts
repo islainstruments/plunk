@@ -32,7 +32,9 @@ describe('scoped website runtime composition', () => {
   it('requires all explicit private bindings and rejects unsafe connection configuration', () => {
     expect(() => createRuntimeApp(config, {} as pg.Pool, metadata)).toThrow('binding required');
     expect(runtimeConfig.safeParse({...config, staffSecretFile: undefined}).success).toBe(false);
-    const db = {host: 'staff-db-proxy', port: 4196, database: 'postgres', user: 'isla_newsletter_staff_read',
+    // pg derives certificate hostname verification from host; preserve the real
+    // TLS name even when Docker routes its address through the fixed proxy.
+    const db = {host: 'aws-0-region.pooler.supabase.com', port: 4196, database: 'postgres', user: 'isla_newsletter_staff_read',
       password: 'x'.repeat(48), tlsServerName: 'aws-0-region.pooler.supabase.com', caFile: '/private/ca.crt'};
     expect(staffDatabaseConfig.safeParse(db).success).toBe(true);
     for (const value of [{...db, user: 'postgres'}, {...db, ssl: false}, {...db, host: 'example.invalid'},
