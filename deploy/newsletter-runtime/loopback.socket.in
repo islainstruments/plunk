@@ -1,0 +1,8 @@
+# New dedicated staging socket ONLY. Replace @PORT@ before verification/install.
+[Unit]
+Description=Newsletter staging loopback socket (not public ingress)
+[Socket]
+ListenStream=127.0.0.1:@PORT@
+NoDelay=true
+[Install]
+WantedBy=sockets.target

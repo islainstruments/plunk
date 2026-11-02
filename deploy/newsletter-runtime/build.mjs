@@ -16,7 +16,7 @@ execFileSync('corepack', ['yarn', 'tsc', '-p', 'tsconfig.isla.build.json'], {cwd
 await mkdir(destination, {recursive: false, mode: 0o700});
 const modules = ['NewsletterRuntime', 'NewsletterServer', 'NewsletterDraftApp', 'NewsletterDrafts', 'NewsletterEditor', 'StaffBoundary'];
 for (const name of modules) await copyFile(join(root, 'apps/api/dist/isla', name + '.js'), join(destination, name + '.js'));
-for (const name of ['package.json', 'package-lock.json', 'Dockerfile', 'healthcheck.mjs', 'grants.sql', 'RUNTIME.md'])
+for (const name of ['package.json', 'package-lock.json', 'Dockerfile', 'healthcheck.mjs', 'grants.sql', 'RUNTIME.md', 'loopback.socket.in', 'loopback.service.in'])
   await copyFile(join(root, 'deploy/newsletter-runtime', name), join(destination, name));
 await copyFile(join(root, 'apps/api/src/isla/schema.sql'), join(destination, 'schema.sql'));
 await copyFile(join(root, 'LICENSE'), join(destination, 'LICENSE'));
@@ -25,7 +25,7 @@ await writeFile(join(destination, 'release.json'), JSON.stringify({revision,
 execFileSync('npm', ['ci', '--omit=dev', '--ignore-scripts', '--no-audit', '--no-fund'], {cwd: destination, stdio: 'inherit'});
 // Hash every application/config/build file; lockfile pins all runtime transitive packages.
 const files = [...modules.map(name => name + '.js'), 'release.json', 'package.json', 'package-lock.json',
-  'Dockerfile', 'healthcheck.mjs', 'grants.sql', 'schema.sql', 'LICENSE', 'RUNTIME.md'];
+  'Dockerfile', 'healthcheck.mjs', 'grants.sql', 'schema.sql', 'LICENSE', 'RUNTIME.md', 'loopback.socket.in', 'loopback.service.in'];
 const hashes = {};
 for (const file of files) hashes[file] = createHash('sha256').update(await readFile(join(destination, file))).digest('hex');
 await writeFile(join(destination, 'manifest.json'), JSON.stringify({revision, hashes}, null, 2) + '\n');

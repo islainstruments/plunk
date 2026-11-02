@@ -87,6 +87,21 @@ The Docker health check tests real DB readiness, not just an open socket. Docker
 restart policy handles exits, NOT an unhealthy-but-running process: monitor
 health separately; no unattended scheduler is installed by these scripts.
 
+On Docker versions that suppress port publication on internal networks, do NOT
+add a public/egress-capable network merely to fix reachability. Keep both
+containers internal and use the supplied systemd socket/proxy templates as new
+dedicated `isla-newsletter-staging.socket` / `.service` units. Substitute the
+freshly checked unused port, actual systemd-socket-proxyd path, and a stable
+private container target IP/port; validate with `systemd-analyze verify` before
+installing. The socket binds ONLY 127.0.0.1. The resource-bounded DynamicUser
+proxy permits only loopback/the target IP and never handles credentials. Pin
+the app's IP on recreation or regenerate/revalidate only these dedicated units.
+Do not alter global Docker/firewall/nginx settings. Record actual host listener,
+internal reachability and health after installation. Socket activation can keep
+listening while the app is down: rollback must stop the dedicated socket AND
+proxy before the app, and reactivate only those new units after verification.
+No existing service needs a restart; systemd daemon-reload only loads new units.
+
 The Dockerfile pins Node's multi-platform digest; record actual image/platform
 and Node/PostgreSQL versions privately at deployment. Database image selection,
 network creation and credentials are operator-owned. No deploy script here may

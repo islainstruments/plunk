@@ -1,0 +1,24 @@
+# No website/nginx/gateway dependency or restart. Replace @TARGET@ and @PROXYD@.
+[Unit]
+Description=Newsletter staging loopback-to-internal-network proxy
+Requires=isla-newsletter-staging.socket
+After=isla-newsletter-staging.socket
+[Service]
+ExecStart=@PROXYD@ @TARGET@
+DynamicUser=true
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+IPAddressDeny=any
+IPAddressAllow=localhost
+IPAddressAllow=@TARGET_IP@/32
+MemoryMax=32M
+CPUQuota=10%
+TasksMax=16
+Restart=on-failure
+RestartSec=3
+LogRateLimitIntervalSec=30s
+LogRateLimitBurst=20
