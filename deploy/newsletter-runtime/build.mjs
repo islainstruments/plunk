@@ -1,7 +1,7 @@
 /* Build a minimal corresponding-source-pinned artifact, never the monorepo app. AGPL-3.0. */
 import {execFileSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
-import {copyFile, mkdir, readFile, writeFile} from 'node:fs/promises';
+import {chmod, copyFile, lstat, mkdir, readdir, readFile, writeFile} from 'node:fs/promises';
 import {dirname, join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 
@@ -29,4 +29,16 @@ const files = [...modules.map(name => name + '.js'), 'release.json', 'package.js
 const hashes = {};
 for (const file of files) hashes[file] = createHash('sha256').update(await readFile(join(destination, file))).digest('hex');
 await writeFile(join(destination, 'manifest.json'), JSON.stringify({revision, hashes}, null, 2) + '\n');
+// The operator may use umask 077. Artifact contains public code only, never secrets:
+// normalize contents for non-root image execution while keeping its host root private.
+async function publicCodePermissions(directory) {
+  for (const name of await readdir(directory)) {
+    const path = join(directory, name);
+    const info = await lstat(path);
+    if (info.isSymbolicLink()) continue;
+    await chmod(path, info.isDirectory() ? 0o755 : 0o644);
+    if (info.isDirectory()) await publicCodePermissions(path);
+  }
+}
+await publicCodePermissions(destination);
 console.log('Built non-sending artifact at ' + destination + ' revision=' + revision);
