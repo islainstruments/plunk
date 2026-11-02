@@ -1,0 +1,16 @@
+{
+  "name": "isla-newsletter-staging-runtime",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "AGPL-3.0",
+  "engines": {
+    "node": ">=24.22.1"
+  },
+  "dependencies": {
+    "express": "5.2.1",
+    "pg": "8.23.1",
+    "sanitize-html": "2.17.7",
+    "zod": "3.25.76"
+  }
+}
