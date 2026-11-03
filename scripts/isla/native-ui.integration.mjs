@@ -20,11 +20,12 @@ const frontend=spawn(process.execPath,['../../node_modules/next/dist/bin/next','
 frontend.stdout.on('data',()=>{}); frontend.stderr.on('data',b=>console.error(b.toString()));
 try {
  const project=await prisma.project.create({data:{name:'Synthetic UI commissioning',public:'ui-fixture-public',secret:'ui-fixture-secret',tracking:'DISABLED'}});
- const app=createNativePlunkApp({origin,projectId:project.id,delivery:new NativeNewsletterDelivery(prisma,ledger,project.id),controllers:nativePlunkControllers(),lookup:async req=>req.headers.cookie?.includes('fixture_staff=admin')?{id:'synthetic-staff',role:'admin'}:null,project:()=>prisma.project.findUnique({where:{id:project.id}}),ready:async()=>{await prisma.$queryRaw`SELECT 1`;}});
+ const app=createNativePlunkApp({origin,projectId:project.id,providerDomains:async()=>[{id:'synthetic-provider-domain',domain:'example.invalid',verified:true,provider:'resend'}],delivery:new NativeNewsletterDelivery(prisma,ledger,project.id),controllers:nativePlunkControllers(),lookup:async req=>req.headers.cookie?.includes('fixture_staff=admin')?{id:'synthetic-staff',role:'admin'}:null,project:()=>prisma.project.findUnique({where:{id:project.id}}),ready:async()=>{await prisma.$queryRaw`SELECT 1`;}});
  server=http.createServer((req,res)=>{
   if(req.url.startsWith('/staff/newsletters/api/')){req.url=req.url.slice('/staff/newsletters/api'.length);return app(req,res);}
   // Authentication is also required for the native page and its assets.
   if(!req.headers.cookie?.includes('fixture_staff=admin')){res.writeHead(401);return res.end('Staff sign-in required');}
+  if(req.url==='/theme-fixture'){res.setHeader('Content-Type','text/html');return res.end('<!doctype html><html><body><iframe title="Native fixture" src="'+base+'/templates/create" style="width:100%;height:950px"></iframe></body></html>');}
   const upstream=http.request({hostname:'127.0.0.1',port:55476,path:req.url,method:req.method,headers:req.headers},r=>{res.writeHead(r.statusCode,r.headers);r.pipe(res);});
   upstream.on('error',()=>{res.writeHead(502);res.end();});req.pipe(upstream);
  });
@@ -49,7 +50,9 @@ try {
  await page.getByRole('heading',{name:'Create template',exact:true}).waitFor();
  await page.locator('#name').fill('Browser native reusable template');
  await page.locator('#subject').fill('Synthetic browser subject');
- await page.locator('#from').fill('fixture@example.invalid');
+ await page.locator('#from').fill('fixture');
+ assert.equal(await page.getByText('No verified domains',{exact:true}).count(),0);
+ assert.ok((await page.getByRole('combobox').first().innerText()).includes('example.invalid'));
  await page.locator('.tiptap[contenteditable=true]').fill('Synthetic visual editor content');
  const created=page.waitForResponse(r=>r.request().method()==='POST'&&r.url().endsWith('/api/templates'));
  await page.getByRole('button',{name:'Create Template',exact:true}).click();
@@ -66,6 +69,25 @@ try {
  assert.equal(await page.locator('#subject').inputValue(),'Edited native browser subject');
  assert.ok((await prisma.template.findUnique({where:{id:template.id}})).body.includes('Synthetic visual editor content'));
  console.log('PASS native visual editor create, save, database persistence and reload');
+ const themePage=await context.newPage();await themePage.goto(origin+'/theme-fixture');
+ const frame=themePage.frameLocator('iframe');await frame.locator('#name').waitFor();
+ for(const theme of ['dark','light']) {
+  await themePage.evaluate(t=>document.documentElement.classList.toggle('dark',t==='dark'),theme);
+  await frame.locator('html').evaluate((el,dark)=>new Promise((resolve,reject)=>{let n=0;const timer=setInterval(()=>{if(el.classList.contains('dark')===dark){clearInterval(timer);resolve(true);}else if(++n>50){clearInterval(timer);reject(Error('Parent theme not synchronized'));}},20);}),theme==='dark');
+  await frame.locator('#name').fill('Visible typed '+theme);await frame.locator('#name').focus();
+  await frame.locator('.tiptap[contenteditable=true]').fill('Visible editor '+theme);
+  for(const selector of ['#name','#subject','#from','[role=combobox]','.tiptap[contenteditable=true]']) {
+   const result=await frame.locator(selector).first().evaluate(el=>{const s=getComputedStyle(el);const l=c=>{const v=c.match(/[\d.]+/g).slice(0,3).map(Number).map(x=>{x/=255;return x<=.04045?x/12.92:((x+.055)/1.055)**2.4;});return .2126*v[0]+.7152*v[1]+.0722*v[2];};const a=l(s.color),b=l(s.backgroundColor);return {ratio:(Math.max(a,b)+.05)/(Math.min(a,b)+.05),color:s.color,bg:s.backgroundColor};});
+   assert.ok(result.ratio>=4.5,theme+' '+selector+' '+JSON.stringify(result));
+  }
+  await frame.locator('#name').evaluate(el=>{el.disabled=true;});
+  const disabled=await frame.locator('#name').evaluate(el=>({color:getComputedStyle(el).color,bg:getComputedStyle(el).backgroundColor,opacity:getComputedStyle(el).opacity}));assert.notEqual(disabled.color,disabled.bg);assert.equal(disabled.opacity,'1');
+  await frame.locator('#name').evaluate(el=>{el.disabled=false;});
+  await frame.getByRole('combobox').first().click();await frame.getByRole('option').first().waitFor();
+  assert.notEqual(await frame.getByRole('listbox').evaluate(el=>getComputedStyle(el).color),await frame.getByRole('listbox').evaluate(el=>getComputedStyle(el).backgroundColor));await themePage.keyboard.press('Escape');
+  await themePage.screenshot({path:'newsletter-parent-controls-'+theme+'.png',fullPage:true});
+ }
+ await themePage.close();console.log('PASS native typed input/editor/selector contrast >=4.5, disabled controls, popup and actual parent theme synchronization BOTH themes');
  await page.screenshot({path:'native-plunk-template-editor.png',fullPage:true});
  const draftResponse=await context.request.post(origin+'/staff/newsletters/api/campaigns',{
   headers:{Origin:origin},data:{name:'Browser native campaign',subject:'Browser draft subject',

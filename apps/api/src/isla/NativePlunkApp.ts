@@ -17,6 +17,7 @@ export interface NativePlunkOptions {
   project: () => Promise<Record<string, unknown> | null>;
   ready: () => Promise<void>;
   customerImports?: boolean;
+  providerDomains?: () => Promise<unknown[]>;
   delivery?: Pick<NativeNewsletterDelivery, 'analytics' | 'content' | 'saveContent'>;
   contactImport?: NativeContactImport;
 }
@@ -87,6 +88,12 @@ export function createNativePlunkApp(options: NativePlunkOptions) {
       this.app.get('/contacts/:id/marketing-status', async (req, res, next) => {
         if (!options.contactImport) return res.sendStatus(503);
         try {res.json(await options.contactImport.marketingStatus(req.params.id));} catch (error) {next(error);}
+      });
+      // Existing provider identity is read-only; never invoke upstream SES onboarding.
+      this.app.get('/domains/project/:projectId', async (req, res, next) => {
+        if (req.params.projectId !== options.projectId) return res.sendStatus(404);
+        if (!options.providerDomains) return res.status(503).json({error: {message: 'Provider domain status unavailable'}});
+        try {res.json(await options.providerDomains());} catch (error) {next(error);}
       });
       this.addControllers(options.controllers);
       this.app.use((_req, res) => res.status(404).json({error: {message: 'Unknown native Plunk route'}}));

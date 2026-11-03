@@ -11,6 +11,7 @@
     font-display: swap;
 }
 html[data-isla-staff='true'] {
+    color-scheme: light;
     --background: 0 0% 94%;
     --foreground: 0 0% 7%;
     --card: 0 0% 98%;
@@ -18,6 +19,9 @@ html[data-isla-staff='true'] {
     --border: 0 0% 82%;
     --muted-foreground: 0 0% 33%;
     --ring: 1 77% 43%;
+    --input: 0 0% 75%;
+    --popover: 0 0% 98%;
+    --popover-foreground: 0 0% 7%;
     font-family: 'ISLA Text', Arial, sans-serif;
     color: hsl(var(--foreground));
     background: hsl(var(--background));
@@ -30,6 +34,9 @@ html[data-isla-staff='true'].dark {
     --card-foreground: 0 0% 94%;
     --muted-foreground: 0 0% 70%;
     --border: 0 0% 27%;
+    --input: 0 0% 35%;
+    --popover: 0 0% 10%;
+    --popover-foreground: 0 0% 94%;
     --color-white: #1a1a1a;
     --color-neutral-50: #111111;
     --color-neutral-100: #2a2a2a;
@@ -42,7 +49,31 @@ html[data-isla-staff='true'].dark {
     --color-neutral-800: #e8e8e8;
     --color-neutral-900: #f0f0f0;
 }
-html[data-isla-staff='true'] :is(button, a, summary, textarea, input):focus-visible {
+/* Forms plugin assigns black text independently of inherited body foreground.
+   Scope overrides to staff chrome; iframe email previews keep authored colors. */
+html[data-isla-staff='true'] :is(input:not([type='checkbox']):not([type='radio']):not([type='range']), textarea, select, [role='combobox'], [contenteditable='true']) {
+    color: hsl(var(--foreground));
+    background-color: hsl(var(--card));
+    border-color: hsl(var(--input));
+    caret-color: hsl(var(--foreground));
+    -webkit-text-fill-color: hsl(var(--foreground));
+}
+html[data-isla-staff='true'] :is(input, textarea)::placeholder {
+    color: hsl(var(--muted-foreground));
+    -webkit-text-fill-color: hsl(var(--muted-foreground));
+    opacity: 1;
+}
+html[data-isla-staff='true'] :is(input, textarea, select, [role='combobox']):disabled {
+    opacity: 1;
+    color: hsl(var(--muted-foreground));
+    -webkit-text-fill-color: hsl(var(--muted-foreground));
+    cursor: not-allowed;
+}
+html[data-isla-staff='true'] :is([role='dialog'], [role='alertdialog'], [role='listbox']) {
+    color: hsl(var(--popover-foreground));
+    background-color: hsl(var(--popover));
+}
+html[data-isla-staff='true'] :is(button, a, summary, textarea, input, select, [role='combobox'], [contenteditable='true']):focus-visible {
     outline: 2px solid #e53935;
     outline-offset: 3px;
 }

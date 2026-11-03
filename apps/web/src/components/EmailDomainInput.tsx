@@ -92,13 +92,13 @@ export function EmailDomainInput({value, onChange, id, placeholder, required, la
         <Alert variant="destructive" className="mt-2">
           <AlertCircle className="h-4 w-4" />
           <AlertDescription>
-            <p className="font-medium text-sm">No verified domains</p>
+            <p className="font-medium text-sm">{process.env.NEXT_PUBLIC_ISLA_STAFF === 'true' ? 'Existing Resend sender unavailable' : 'No verified domains'}</p>
             <p className="text-xs mt-1">
-              Please add and verify a domain in{' '}
+              {process.env.NEXT_PUBLIC_ISLA_STAFF === 'true' ? 'Existing Resend verification could not be confirmed. Infrastructure will refresh provider status; no new domain setup is required.' : <>Please add and verify a domain in{' '}
               <Link href="/settings?tab=domains" className="underline hover:text-red-800">
                 Settings → Domains
               </Link>{' '}
-              before creating templates.
+              before creating templates.</>}
             </p>
           </AlertDescription>
         </Alert>

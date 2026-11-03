@@ -12,6 +12,7 @@ import {CanonicalMarketing} from './CanonicalMarketing.js';
 import {newsletterRouter} from './NewsletterRouter.js';
 import {databaseConfig, staffDatabaseConfig, readPrivateJson} from './NewsletterRuntime.js';
 import {websiteStaffLookup} from './StaffBoundary.js';
+import {resendProjectDomains} from './ResendDomains.js';
 
 let startupStage = 'configuration';
 async function start() {
@@ -100,6 +101,7 @@ async function start() {
   publicApi.use(newsletterRouter(ledger, lookup, config.websiteOrigin));
   const api = createNativePlunkApp({origin: config.websiteOrigin, projectId: project.id, lookup,
     customerImports,
+    providerDomains: () => resendProjectDomains(project.id),
     contactImport: new NativeContactImport(prisma, project.id, email => canonical.eligible(email), customerImports),
     delivery: new NativeNewsletterDelivery(prisma, ledger, project.id),
     controllers: nativePlunkControllers(), project: () => prisma.project.findUnique({where: {id: project.id}}),
