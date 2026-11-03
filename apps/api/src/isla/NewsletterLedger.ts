@@ -25,6 +25,8 @@ export interface Options {
   apiKey?: string;
   /** Operator-only immutable one-test pin; never populated from HTTP input. */
   authorizedDelivery?: {id: string; version: string; recipient: string; from: string; replyTo: string};
+  /** Operator-only immutable review audit; does NOT relax any suppression or consent check. */
+  reviewedStaffTest?: (recipient: string, version: string) => Promise<boolean>;
   /** Must consult canonical eligibility, not just cached Plunk contact state. */
   eligibility: (email: string) => Promise<boolean>;
   publicOrigin: string;
@@ -248,7 +250,8 @@ export class NewsletterLedger {
       ).rowCount;
       if (
         suppressed ||
-        row.review ||
+        (row.review && !(pin && this.options.reviewedStaffTest &&
+          await this.options.reviewedStaffTest(row.recipient as string, row.content_version as string))) ||
         !row.consent_evidence ||
         !(await this.options.eligibility(row.recipient as string))
       ) {

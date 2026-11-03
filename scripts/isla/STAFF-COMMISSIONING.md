@@ -43,6 +43,31 @@ Status prints delivery/provider IDs and outcome facts, not content/addresses/cre
 
 ## Backup and rollback
 
+### Exact designated-staff review audit (not a subscription change)
+
+When the designated staff member has genuine consent and NO local/canonical veto,
+but native subscribed=false is derived solely from validation_missing plus the
+evidenced transient provider_failure_review, Infrastructure may record the existing
+explicit one-test authorization in staff_test_review_audit. This is NOT permission
+to clear customer review or automatically resubscribe. The immutable audit pins the
+existing native contact, campaign, rendered content SHA256, consent SHA256, exact two
+review reasons and private investigation reference. Insert it with Infrastructure's
+owner connection only; operator/web cannot insert/update/delete it. Apply only the
+additive table/trigger and operator SELECT/RLS policy, not a broad privilege grant.
+
+Only the disposable StaffTestOperator supplies the audit verifier. The native web
+runtime and all customer paths retain their ordinary gates. Both prepare and attempt
+must match this audit; attempt also requires the immutable one-delivery binding.
+Missing/drifted consent, wrong native identity/campaign/version, ANY local suppression
+(including quarantine), canonical denial/outage all fail closed. All checks are
+repeated at the transport boundary. Global subscribed=false/review=true are preserved.
+If a real veto exists, this exception cannot authorize the test. Never delete a veto
+or change the audit to force success. Keep immutable audits/bindings on rollback.
+
+An operator-only image overlay may carry these CLI changes without restarting the
+long-lived native web service or interrupting contact imports. Publish corresponding
+source separately and record both image identities; do not claim the web image changed.
+
 Reuse Infrastructure's existing fresh pg_dump/private config/image backup and API-only overlay pipeline; no frontend rebuild is needed. New schema is additive. Preserve immutable staff_test_authorizations and all delivery/attempt/provider/veto facts on rollback; NEVER restore an old dump over newer attempts. Retain old app image/config and the current web build. Missing import-release file or false value closes imports after native app restart; preserve every suppression/contact record. Native app remains sending-disabled; operator must be stopped independently before rollback. After rollback verify native key read, anonymous denial, staff shell, import/send holds and unrelated services unchanged. No destructive rollback rehearsal is claimed by this software continuation.
 
 ## Executed software verification

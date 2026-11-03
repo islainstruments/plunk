@@ -12,7 +12,8 @@ import {NativeAudience} from './NativeAudience.js';
  * No import, worker or enabled send route is installed by constructing it. */
 export class NativeNewsletterDelivery {
   constructor(private readonly db: PrismaClient, private readonly ledger: NewsletterLedger,
-    private readonly projectId: string) {}
+    private readonly projectId: string,
+    private readonly reviewedStaffTest?: (contactId: string, email: string, campaignId: string, version: string) => Promise<boolean>) {}
 
   async staffTestRevision(campaignId: string, recipient: string, plainText?: string) {
     plainText ??= (await this.content(campaignId)).plainText;
@@ -21,7 +22,7 @@ export class NativeNewsletterDelivery {
     if (!campaign || campaign.status !== 'DRAFT' || campaign.type !== 'MARKETING')
       throw new Error('Native marketing draft required');
     const contact = await this.db.contact.findFirst({where: {projectId: this.projectId, email: recipient}});
-    if (!contact || !contact.subscribed) throw new Error('Native contact is ineligible');
+    if (!contact) throw new Error('Native contact is ineligible');
     // Preserve Liquid personalization, but preference URLs are generated per
     // immutable ledger delivery; never use upstream contact-id unsubscribe URLs.
     if (/{{\s*(?:unsubscribeUrl|subscribeUrl|manageUrl)\b/.test(campaign.body))
@@ -34,6 +35,8 @@ export class NativeNewsletterDelivery {
     const draft = {from: campaign.fromName ? `${campaign.fromName} <${campaign.from}>` : campaign.from,
       reply_to: campaign.replyTo ?? campaign.from, subject, html, text};
     const version = createHash('sha256').update(JSON.stringify(draft)).digest('hex');
+    if (!contact.subscribed && !await this.reviewedStaffTest?.(contact.id, contact.email, campaignId, version))
+      throw new Error('Native contact is ineligible');
     return {draft, version};
   }
   async prepareStaffTest(campaignId: string, recipient: string, plainText?: string, expectedVersion?: string): Promise<string> {

@@ -24,7 +24,7 @@ with tempfile.TemporaryDirectory(prefix='native-fixture-',dir=os.environ['TMPDIR
   env={**os.environ,'DATABASE_URL':'postgresql://fixture@127.0.0.1:55473/plunk_native','DIRECT_DATABASE_URL':'postgresql://fixture@127.0.0.1:55473/plunk_native','REDIS_URL':'redis://127.0.0.1:56373','EMAIL_TRANSPORT':'held','JWT_SECRET':'synthetic-fixture-not-production','API_URI':'https://staff.example.invalid/staff/newsletters/api','DASHBOARD_URI':'https://staff.example.invalid/staff/newsletters/plunk','LANDING_URI':'https://staff.example.invalid','WIKI_URI':'https://staff.example.invalid/source'}
   run(['node','node_modules/prisma/build/index.js','db','push','--schema','packages/db/prisma/schema.prisma','--skip-generate'],cwd=root,env=env)
   run(['node','node_modules/typescript/bin/tsc','-p','apps/api/tsconfig.json'],cwd=root,env=env)
-  for name in ['controller','delivery','import','commissioning']+(['ui'] if '--browser' in sys.argv else []):
+  for name in ['controller','delivery','import','commissioning','staff-review']+(['ui'] if '--browser' in sys.argv else []):
    run(['node',str(root/'scripts/isla'/('native-'+name+'.integration.mjs'))],cwd=root,env=env)
  finally:
   for process in [pg,redis]:process.terminate()

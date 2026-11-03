@@ -137,6 +137,23 @@ END $$;
 DROP TRIGGER IF EXISTS immutable_staff_test ON isla_newsletter.staff_test_authorizations;
 CREATE TRIGGER immutable_staff_test BEFORE UPDATE OR DELETE ON isla_newsletter.staff_test_authorizations
   FOR EACH ROW EXECUTE FUNCTION isla_newsletter.freeze_staff_test();
+-- An Infrastructure-audited exception to REVIEW only for the already authorized
+-- one staff test. Never changes global subscription/review or actual vetoes.
+CREATE TABLE IF NOT EXISTS isla_newsletter.staff_test_review_audit (
+  authorization_id text PRIMARY KEY CHECK (authorization_id='brad-2026-11-02-one-test'),
+  recipient text NOT NULL CHECK (recipient='brad@islaelectronics.com'),
+  native_contact_id text NOT NULL,
+  campaign_id text NOT NULL,
+  content_version text NOT NULL CHECK (content_version ~ '^[a-f0-9]{64}$'),
+  consent_sha256 text NOT NULL CHECK (consent_sha256 ~ '^[a-f0-9]{64}$'),
+  review_reasons jsonb NOT NULL CHECK (review_reasons='["validation_missing","provider_failure_review"]'::jsonb),
+  evidence_reference text NOT NULL CHECK (length(evidence_reference)>0),
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+ALTER TABLE isla_newsletter.staff_test_review_audit ENABLE ROW LEVEL SECURITY;
+DROP TRIGGER IF EXISTS immutable_staff_test_review ON isla_newsletter.staff_test_review_audit;
+CREATE TRIGGER immutable_staff_test_review BEFORE UPDATE OR DELETE ON isla_newsletter.staff_test_review_audit
+  FOR EACH ROW EXECUTE FUNCTION isla_newsletter.freeze_staff_test();
 CREATE TABLE IF NOT EXISTS isla_newsletter.provider_events (
   event_id text PRIMARY KEY,
   provider_id text NOT NULL,

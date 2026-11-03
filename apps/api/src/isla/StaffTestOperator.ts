@@ -6,7 +6,7 @@ import {databaseConfig, staffDatabaseConfig, readPrivateJson} from './Newsletter
 import {NewsletterLedger} from './NewsletterLedger.js';
 import {NativeNewsletterDelivery} from './NativeNewsletterDelivery.js';
 import {CanonicalMarketing} from './CanonicalMarketing.js';
-import {reserveStaffTest, staffTestAuthorization, staffTestFrom, staffTestRecipient} from './StaffTestCommissioning.js';
+import {reserveStaffTest, reviewedStaffTestEligible, staffTestAuthorization, staffTestFrom, staffTestRecipient} from './StaffTestCommissioning.js';
 
 const approval = z.object({
   authorization: z.literal(staffTestAuthorization), campaignId: z.string().min(1),
@@ -47,7 +47,9 @@ async function run() {
       statement_timeout: 3000, ssl: {rejectUnauthorized: true, servername: tlsServerName, ca: await readFile(caFile, 'utf8'), minVersion: 'TLSv1.2'}});
     const canonical = new CanonicalMarketing(pool, canonicalPool);
     let ledger = new NewsletterLedger(pool, {mode: 'disabled', publicOrigin: 'https://islaelectronics.com', webhookSecret: '', eligibility: email => canonical.eligible(email)});
-    const adapter = new NativeNewsletterDelivery(prisma, ledger, project.id);
+    const reviewProof = async (contactId: string, email: string, campaignId: string, version: string) =>
+      reviewedStaffTestEligible(pool, contactId, email, campaignId, version);
+    const adapter = new NativeNewsletterDelivery(prisma, ledger, project.id, reviewProof);
     if (action === 'inspect') {
       const {version, draft} = await adapter.staffTestRevision(cfg.campaignId, staffTestRecipient);
       if (draft.from !== staffTestFrom || draft.reply_to !== staffTestRecipient) throw Error('Sender mismatch');
@@ -71,8 +73,15 @@ async function run() {
       throw Error('Fresh provider-history and transactional quota-reserve checks required');
     const credential = z.object({apiKey: z.string().min(10)}).strict().parse(await readPrivateJson(cfg.credentialFile));
     ledger = new NewsletterLedger(pool, {mode: 'staff-test', apiKey: credential.apiKey, designatedRecipients: [staffTestRecipient], authorizedDelivery: pin,
+      reviewedStaffTest: async (email, version) => {
+        const contact = await prisma.contact.findFirst({where: {projectId: project.id, email}});
+        return !!contact && await reviewProof(contact.id, email, cfg.campaignId, version);
+      },
       publicOrigin: 'https://islaelectronics.com', webhookSecret: '', intervalMs: 2000,
-      eligibility: async email => !!await prisma.contact.findFirst({where: {projectId: project.id, email, subscribed: true}}) && await canonical.eligible(email)});
+      eligibility: async email => {
+        const contact = await prisma.contact.findFirst({where: {projectId: project.id, email}});
+        return !!contact && (contact.subscribed || await reviewProof(contact.id, email, cfg.campaignId, cfg.version!)) && await canonical.eligible(email);
+      }});
     console.log(JSON.stringify({deliveryId: cfg.deliveryId, result: await ledger.attempt(cfg.deliveryId)}));
   } finally {await prisma.$disconnect(); await pool.end(); await canonicalPool?.end();}
 }

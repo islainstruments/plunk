@@ -1,10 +1,29 @@
 /* ISLA operator-only single staff test. AGPL-3.0. No HTTP routes or workers. */
 import type {Pool} from 'pg';
+import {createHash} from 'node:crypto';
 import type {NewsletterLedger} from './NewsletterLedger.js';
 
 export const staffTestAuthorization = 'brad-2026-11-02-one-test';
 export const staffTestRecipient = 'brad@islaelectronics.com';
 export const staffTestFrom = 'ISLA Electronics <noreply@islaelectronics.com>';
+
+/** Read-only proof, inserted by Infrastructure (NOT writable by operator/web).
+ * Review is not an unsubscribe. This exact one-test exception still requires
+ * unchanged genuine consent, native identity, content and NO actual local veto.
+ * Canonical eligibility remains a separate fresh check at the HTTP boundary. */
+export async function reviewedStaffTestEligible(pool: Pool, contactId: string, email: string,
+  campaignId: string, version: string): Promise<boolean> {
+  if (email !== staffTestRecipient) return false;
+  const row = (await pool.query(`SELECT c.consent_evidence,a.consent_sha256 FROM isla_newsletter.staff_test_review_audit a
+    JOIN isla_newsletter.contacts c ON c.email=a.recipient
+    JOIN public.contacts n ON n.id=a.native_contact_id AND n.email=a.recipient
+    JOIN public.campaigns p ON p.id=a.campaign_id AND p."projectId"=n."projectId"
+    WHERE a.authorization_id=$1 AND a.recipient=$2 AND a.native_contact_id=$3 AND a.campaign_id=$4
+      AND a.content_version=$5 AND c.review=true AND c.consent_evidence IS NOT NULL
+      AND NOT EXISTS(SELECT 1 FROM isla_newsletter.suppressions s WHERE s.email=a.recipient)`,
+    [staffTestAuthorization, email, contactId, campaignId, version])).rows[0];
+  return !!row?.consent_evidence && createHash('sha256').update(row.consent_evidence).digest('hex') === row.consent_sha256;
+}
 
 /** Persist a single delivery binding before any HTTP. Concurrent operators and
  * restarts cannot rotate campaign/revision/key after an uncertain acceptance.
