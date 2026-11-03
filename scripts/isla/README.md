@@ -12,11 +12,13 @@ Use Node >=24.22.1 and Corepack Yarn 4.9.1. From the repository root:
     cd apps/web
     NODE_OPTIONS=--max-old-space-size=768 NEXT_PUBLIC_ISLA_STAFF=true NEXT_PUBLIC_API_URI=/staff/newsletters/api NEXT_PUBLIC_DASHBOARD_URI=/staff/newsletters/plunk NEXT_PUBLIC_LANDING_URI=/ NEXT_PUBLIC_WIKI_URI=https://github.com/islainstruments/plunk node ../../node_modules/next/dist/bin/next build --webpack
     cd ../..
-    node scripts/isla/package-api.cjs /absolute/private/build/native-api-bundle
+    node scripts/isla/package-release.cjs /absolute/private/build/native-release-bundle
 
 Build sequentially, not concurrently with PostgreSQL/browser fixtures. The Next config uses one build worker and memory optimizations. The traced API bundle's api/ directory overlays /app in the held Node runtime. Copy apps/web/.next/standalone to /app/web, apps/web/.next/static to /app/web/apps/web/.next/static and apps/web/public to /app/web/apps/web/public. Preserve the generated Prisma engine dependencies. Do not package .env, runtime configuration, backups, recipient exports, test databases or preserved .next directories. Build context must be an explicit allowlist, never the checkout root.
 
 Runtime entry: apps/api/dist/isla/NativePlunkServer.js. It spawns the standalone native web server. Persist the dedicated PostgreSQL database and Redis volume. Readiness: /health/ready. The host loads private /run/newsletter configuration; see NewsletterRuntime's strict schemas. Do not put actual connection values in source/build environment or client variables. Schema application and scoped role grants are operator actions, not automatic startup actions. The website staff shell and private TLS ingress are deployment-specific and not distributed with credentials.
+
+Packaging must preserve relative symlinks (`fs.cp` requires `verbatimSymlinks:true`). The release packager validates all standalone links; the bounded `relocate-standalone.cjs` repair can convert previously broken absolute build-host `/.next/standalone/` targets to relative links within the same bundle, rejecting missing or escaping targets. Run `node --test scripts/isla/relocate-standalone.test.cjs`. Before promotion, start the exact packaged production server in an isolated container and GET the actual SSR overview, contacts, templates, campaign editor and analytics paths plus their static assets. API readiness, a successful build and development-server browser tests do not prove the relocated production frontend works. Never mint a production staff session for this check; direct loopback SSR checks are distinct from genuine signed-in acceptance.
 
 ## Transport and consent contract
 

@@ -5,7 +5,10 @@ const root=path.resolve(__dirname,'../..'),out=path.resolve(process.argv[2]||'na
  try{await fs.stat(out);throw Error('Use a fresh release output path')}catch(e){if(e.code!=='ENOENT')throw e}
  const result=cp.spawnSync(process.execPath,[path.join(__dirname,'package-api.cjs'),out],{cwd:root,stdio:'inherit'});
  if(result.status!==0)throw Error('API dependency trace failed');
- await fs.cp(path.join(root,'apps/web/.next/standalone'),path.join(out,'api/web'),{recursive:true});
+ // fs.cp otherwise resolves relative symlinks to absolute build-host paths.
+ await fs.cp(path.join(root,'apps/web/.next/standalone'),path.join(out,'api/web'),{recursive:true,verbatimSymlinks:true});
+ const {relocateStandalone}=require('./relocate-standalone.cjs');
+ await relocateStandalone(path.join(out,'api/web'));
  await fs.cp(path.join(root,'apps/web/.next/static'),path.join(out,'api/web/apps/web/.next/static'),{recursive:true});
  await fs.cp(path.join(root,'apps/web/public'),path.join(out,'api/web/apps/web/public'),{recursive:true});
  const revision=cp.execFileSync('git',['rev-parse','HEAD'],{cwd:root,encoding:'utf8'}).trim();
