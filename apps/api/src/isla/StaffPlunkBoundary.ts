@@ -47,7 +47,11 @@ export function staffPlunkBoundary(options: {lookup: StaffLookup; origin: string
       const staff = await options.lookup(req);
       if (!staff) return res.status(401).json({error: {message: 'Existing website staff sign-in required'}});
       const read = req.method === 'GET' || req.method === 'HEAD';
-      if (!read && (req.headers.origin !== options.origin || staff.role !== 'admin')) {
+      // Both existing HTTPS website hosts serve the authenticated staff shell.
+      // Never derive trusted origins from a request Host/Forwarded header.
+      const trustedOrigin = req.headers.origin === options.origin ||
+        (options.origin === 'https://islaelectronics.com' && req.headers.origin === 'https://www.islaelectronics.com');
+      if (!read && (!trustedOrigin || staff.role !== 'admin')) {
         return res.status(403).json({error: {message: 'Admin role and exact website Origin required'}});
       }
       const path = req.path;

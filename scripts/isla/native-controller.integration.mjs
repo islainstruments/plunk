@@ -32,6 +32,19 @@ try {
  }
  role='viewer'; r=await call('post','/templates',content); assert.equal(r.status,403);
  r=await call('get','/templates'); assert.equal(r.status,200);
+ role='admin';
+ const websiteApp=createNativePlunkApp({origin:'https://islaelectronics.com',projectId:project.id,controllers:[],
+   lookup:async()=>role?{id:'synthetic-staff',role}:null,project:async()=>null,ready:async()=>{}});
+ // Allowed-origin requests reach the empty controller host (404); denied writes
+ // fail at the boundary (403). No actual website session or production DB used.
+ for(const site of ['https://islaelectronics.com','https://www.islaelectronics.com']) {
+   r=await request(websiteApp).post('/templates').set('Origin',site).send({});assert.equal(r.status,404,r.text);
+ }
+ for(const site of ['http://www.islaelectronics.com','https://evil.example.invalid','https://www.islaelectronics.com.evil.example.invalid','null']) {
+   r=await request(websiteApp).post('/templates').set('Origin',site).set('Host','www.islaelectronics.com').send({});assert.equal(r.status,403,r.text);
+ }
+ r=await request(websiteApp).post('/templates').send({});assert.equal(r.status,403);
+ role='viewer';r=await request(websiteApp).post('/templates').set('Origin','https://www.islaelectronics.com').send({});assert.equal(r.status,403);
  role=null; r=await call('get','/templates'); assert.equal(r.status,401);
  console.log('PASS: real native template create/edit/reload/duplicate, draft campaign, static list, empty contacts, analytics/config, holds, viewer and unauthenticated boundaries');
  await prisma.$disconnect(); process.exit(0);
