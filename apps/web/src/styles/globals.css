@@ -48,9 +48,18 @@ html[data-isla-staff='true'].dark {
     --color-neutral-700: #dddddd;
     --color-neutral-800: #e8e8e8;
     --color-neutral-900: #f0f0f0;
+    --color-neutral-950: #f5f5f5;
 }
 /* Forms plugin assigns black text independently of inherited body foreground.
    Scope overrides to staff chrome; iframe email previews keep authored colors. */
+html[data-isla-staff='true'] body {
+    color: hsl(var(--foreground));
+    background-color: hsl(var(--background));
+}
+/* Tailwind optimizes this utility to literal lab(); the variable is insufficient. */
+html[data-isla-staff='true'] .text-neutral-950 {
+    color: hsl(var(--foreground));
+}
 html[data-isla-staff='true'] :is(input:not([type='checkbox']):not([type='radio']):not([type='range']), textarea, select, [role='combobox'], [contenteditable='true']) {
     color: hsl(var(--foreground));
     background-color: hsl(var(--card));

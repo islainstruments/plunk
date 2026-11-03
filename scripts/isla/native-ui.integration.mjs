@@ -76,8 +76,11 @@ try {
   await frame.locator('html').evaluate((el,dark)=>new Promise((resolve,reject)=>{let n=0;const timer=setInterval(()=>{if(el.classList.contains('dark')===dark){clearInterval(timer);resolve(true);}else if(++n>50){clearInterval(timer);reject(Error('Parent theme not synchronized'));}},20);}),theme==='dark');
   await frame.locator('#name').fill('Visible typed '+theme);await frame.locator('#name').focus();
   await frame.locator('.tiptap[contenteditable=true]').fill('Visible editor '+theme);
-  for(const selector of ['#name','#subject','#from','[role=combobox]','.tiptap[contenteditable=true]']) {
-   const result=await frame.locator(selector).first().evaluate(el=>{const s=getComputedStyle(el);const l=c=>{const v=c.match(/[\d.]+/g).slice(0,3).map(Number).map(x=>{x/=255;return x<=.04045?x/12.92:((x+.055)/1.055)**2.4;});return .2126*v[0]+.7152*v[1]+.0722*v[2];};const a=l(s.color),b=l(s.backgroundColor);return {ratio:(Math.max(a,b)+.05)/(Math.min(a,b)+.05),color:s.color,bg:s.backgroundColor};});
+  // Native transition-colors controls must settle after parent theme/disabled changes.
+  await themePage.waitForTimeout(250);
+  for(const selector of ['#name','#subject','#from','[role=combobox]','.tiptap[contenteditable=true]','label[for=from]']) {
+   const result=await frame.locator(selector).first().evaluate(el=>{const s=getComputedStyle(el);let parent=el,bg=s.backgroundColor;while(bg==='rgba(0, 0, 0, 0)'&&parent.parentElement){parent=parent.parentElement;bg=getComputedStyle(parent).backgroundColor;}const canvas=document.createElement('canvas');canvas.width=canvas.height=1;const ctx=canvas.getContext('2d');const l=c=>{ctx.clearRect(0,0,1,1);ctx.fillStyle=c;ctx.fillRect(0,0,1,1);const v=Array.from(ctx.getImageData(0,0,1,1).data).slice(0,3).map(x=>{x/=255;return x<=.04045?x/12.92:((x+.055)/1.055)**2.4;});return .2126*v[0]+.7152*v[1]+.0722*v[2];};const a=l(s.color),b=l(bg);return {ratio:(Math.max(a,b)+.05)/(Math.min(a,b)+.05),color:s.color,bg};});
+   if(result.ratio<4.5)console.log('CONTRAST_ANCESTRY',await frame.locator(selector).first().evaluate(el=>{const rows=[];for(let p=el;p;p=p.parentElement)rows.push({tag:p.tagName,cls:p.className,color:getComputedStyle(p).color});return rows;}));
    assert.ok(result.ratio>=4.5,theme+' '+selector+' '+JSON.stringify(result));
   }
   await frame.locator('#name').evaluate(el=>{el.disabled=true;});

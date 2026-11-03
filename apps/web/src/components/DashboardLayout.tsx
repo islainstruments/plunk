@@ -106,7 +106,7 @@ export function DashboardLayout({children}: DashboardLayoutProps) {
 
       {process.env.NEXT_PUBLIC_ISLA_STAFF === 'true' && (
         <p role="status" className="px-4 py-3 text-sm border-b border-neutral-200 bg-amber-50 text-amber-900">
-          Staff commissioning: imports and all sending are held. Campaigns remain drafts.
+          Customer campaign sending is held. Authorized reconciled imports and operator-only staff tests are separately controlled. Campaigns remain drafts.
           Opens and clicks can include privacy proxies and link scanners; they do not prove human reading.
         </p>
       )}
